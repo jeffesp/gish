@@ -19,5 +19,6 @@ func main() {
 		os.Exit(1)
 	}
 
+	SetupSignals(os.Stderr)
 	RunREPL(repo, os.Stdin, os.Stdout, os.Stderr)
 }

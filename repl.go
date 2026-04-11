@@ -33,7 +33,10 @@ func RunREPL(repo *git.Repository, in io.Reader, out io.Writer, err io.Writer) {
 				cmd.Stdin = os.Stdin
 				cmd.Stdout = out
 				cmd.Stderr = err
-				if err_ := cmd.Run(); err_ != nil {
+				SetCurrentCmd(cmd)
+				err_ := cmd.Run()
+				ClearCurrentCmd()
+				if err_ != nil {
 					fmt.Fprintf(err, "error: %v\n", err_)
 				}
 			}

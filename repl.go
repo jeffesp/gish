@@ -6,25 +6,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
-
-	"github.com/go-git/go-git/v5"
 )
 
-func showGitStatus() bool {
-	val, set := os.LookupEnv("GISH_GIT_STATUS")
-	if !set {
-		return true
-	}
-	show, err := strconv.ParseBool(val)
-	if err != nil {
-		return true
-	}
-	return show
-}
-
-func RunREPL(repo *git.Repository, in io.Reader, out io.Writer, err io.Writer) {
+func RunREPL(in io.Reader, out io.Writer, err io.Writer, afterCmd func()) {
 	scanner := bufio.NewScanner(in)
 	for {
 		fmt.Fprint(out, "gish> ")
@@ -55,13 +40,8 @@ func RunREPL(repo *git.Repository, in io.Reader, out io.Writer, err io.Writer) {
 			}
 		}
 
-		if showGitStatus() {
-			files, err_ := getStatus(repo)
-			if err_ != nil {
-				fmt.Fprintf(err, "status error: %v\n", err_)
-				continue
-			}
-			printStatus(files)
+		if afterCmd != nil {
+			afterCmd()
 		}
 	}
 }

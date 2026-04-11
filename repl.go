@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 )
 
-func RunREPL(repo *git.Repository, in io.Reader, out io.Writer) {
+func RunREPL(repo *git.Repository, in io.Reader, out io.Writer, err io.Writer) {
 	scanner := bufio.NewScanner(in)
 	for {
 		fmt.Fprint(out, "gish> ")
@@ -25,23 +25,23 @@ func RunREPL(repo *git.Repository, in io.Reader, out io.Writer) {
 			name, args := tokens[0], tokens[1:]
 			fn, ok := Builtins[name]
 			if ok {
-				if err := fn(args, out); err != nil {
-					fmt.Fprintf(out, "error: %v\n", err)
+				if err_ := fn(args, out); err_ != nil {
+					fmt.Fprintf(err, "error: %v\n", err_)
 				}
 			} else {
 				cmd := exec.Command(name, args...)
 				cmd.Stdin = os.Stdin
 				cmd.Stdout = out
-				cmd.Stderr = out
-				if err := cmd.Run(); err != nil {
-					fmt.Fprintf(out, "error: %v\n", err)
+				cmd.Stderr = err
+				if err_ := cmd.Run(); err_ != nil {
+					fmt.Fprintf(err, "error: %v\n", err_)
 				}
 			}
 		}
 
-		files, err := getStatus(repo)
-		if err != nil {
-			fmt.Fprintf(out, "status error: %v\n", err)
+		files, err_ := getStatus(repo)
+		if err_ != nil {
+			fmt.Fprintf(err, "status error: %v\n", err_)
 			continue
 		}
 		printStatus(files)

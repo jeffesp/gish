@@ -19,5 +19,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	RunREPL(repo, os.Stdin, os.Stdout)
+	RunREPL(repo, os.Stdin, os.Stdout, os.Stderr)
 }

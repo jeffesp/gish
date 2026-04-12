@@ -110,8 +110,5 @@ func runScannerREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func
 			})
 		}
 
-		if afterCmd != nil {
-			afterCmd(out, errOut)
-		}
 	}
 }

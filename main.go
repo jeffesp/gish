@@ -9,20 +9,18 @@ import (
 )
 
 func main() {
-	path := "."
-	if len(os.Args) > 1 {
-		path = os.Args[1]
-	}
-
-	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error opening repo: %v\n", err)
-		os.Exit(1)
-	}
-
 	SetupSignals(os.Stderr)
 	RunREPL(os.Stdin, os.Stdout, os.Stderr, func() {
 		if !gitStatusEnabled() {
+			return
+		}
+		path, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to get current path: %v\n", err)
+			return
+		}
+		repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
+		if err != nil {
 			return
 		}
 		files, err := getStatus(repo)

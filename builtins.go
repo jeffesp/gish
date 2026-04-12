@@ -21,6 +21,7 @@ func init() {
 	RegisterBuiltin("env", builtinEnv)
 	RegisterBuiltin("clear", builtinClear)
 	RegisterBuiltin("echo", builtinEcho)
+	RegisterBuiltin("cd", builtinCd)
 }
 
 func builtinSet(args []string, w io.Writer) error {
@@ -42,6 +43,19 @@ func builtinEnv(args []string, w io.Writer) error {
 		fmt.Fprintln(w, e)
 	}
 	return nil
+}
+
+func builtinCd(args []string, w io.Writer) error {
+	var dir string
+	switch len(args) {
+	case 0:
+		dir = os.Getenv("HOME")
+	case 1:
+		dir = args[0]
+	default:
+		return fmt.Errorf("usage: cd [dir]")
+	}
+	return os.Chdir(dir)
 }
 
 func builtinClear(args []string, w io.Writer) error {

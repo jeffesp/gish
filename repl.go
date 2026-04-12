@@ -18,7 +18,7 @@ type readWriter struct {
 	io.Writer
 }
 
-func RunREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func()) {
+func RunREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {
 	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		runRawREPL(f, out, errOut, afterCmd)
 		return
@@ -43,7 +43,7 @@ func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cm
 	ClearCurrentCmd()
 }
 
-func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func()) {
+func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {
 	fd := int(in.Fd())
 	origState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -88,12 +88,12 @@ func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func()) {
 		}
 
 		if afterCmd != nil {
-			afterCmd()
+			afterCmd(t, t)
 		}
 	}
 }
 
-func runScannerREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func()) {
+func runScannerREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {
 	scanner := bufio.NewScanner(in)
 	for {
 		fmt.Fprint(out, "gish> ")
@@ -111,7 +111,7 @@ func runScannerREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func
 		}
 
 		if afterCmd != nil {
-			afterCmd()
+			afterCmd(out, errOut)
 		}
 	}
 }

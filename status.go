@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"sort"
 
 	"github.com/go-git/go-git/v5"
@@ -40,13 +41,13 @@ func getStatus(repo *git.Repository) ([]FileStatus, error) {
 	return files, nil
 }
 
-func printStatus(files []FileStatus) {
+func printStatus(out io.Writer, files []FileStatus) {
 	if len(files) == 0 {
-		fmt.Println("nothing to commit, working tree clean")
+		fmt.Fprintln(out, "nothing to commit, working tree clean")
 		return
 	}
 
 	for _, f := range files {
-		fmt.Printf("%c%c\t%s\n", f.Staging, f.Worktree, f.Path)
+		fmt.Fprintf(out, "%c%c\t%s\n", f.Staging, f.Worktree, f.Path)
 	}
 }

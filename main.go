@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 
@@ -10,13 +11,13 @@ import (
 
 func main() {
 	SetupSignals(os.Stderr)
-	RunREPL(os.Stdin, os.Stdout, os.Stderr, func() {
+	RunREPL(os.Stdin, os.Stdout, os.Stderr, func(out, errOut io.Writer) {
 		if !gitStatusEnabled() {
 			return
 		}
 		path, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "unable to get current path: %v\n", err)
+			fmt.Fprintf(errOut, "unable to get current path: %v\n", err)
 			return
 		}
 		repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
@@ -25,10 +26,10 @@ func main() {
 		}
 		files, err := getStatus(repo)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "status error: %v\n", err)
+			fmt.Fprintf(errOut, "status error: %v\n", err)
 			return
 		}
-		printStatus(files)
+		printStatus(out, files)
 	})
 }
 

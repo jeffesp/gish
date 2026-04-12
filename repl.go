@@ -26,8 +26,40 @@ func RunREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func(io.Wri
 	runScannerREPL(in, out, errOut, afterCmd)
 }
 
+func tokenize(line string) ([]string, error) {
+	var tokens []string
+	var cur strings.Builder
+	inQuote := false
+
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		switch {
+		case ch == '\'':
+			inQuote = !inQuote
+		case (ch == ' ' || ch == '\t') && !inQuote:
+			if cur.Len() > 0 {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteByte(ch)
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf("unclosed single quote")
+	}
+	if cur.Len() > 0 {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens, nil
+}
+
 func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cmd) error) {
-	tokens := strings.Fields(line)
+	tokens, err := tokenize(line)
+	if err != nil {
+		fmt.Fprintf(errOut, "error: %v\n", err)
+		return
+	}
 	name, args := tokens[0], tokens[1:]
 	if fn, ok := Builtins[name]; ok {
 		if err := fn(args, out); err != nil {

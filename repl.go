@@ -26,32 +26,58 @@ func RunREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func(io.Wri
 	runScannerREPL(in, out, errOut, afterCmd)
 }
 
-func tokenize(line string) ([]string, error) {
-	var tokens []string
+func tokenize(line string) ([]Token, error) {
+	var tokens []Token
 	var cur strings.Builder
 	inQuote := false
+	quoteChar := byte(0)
+	curKind := TokenWord
 
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 		switch {
-		case ch == '\'':
-			inQuote = !inQuote
-		case (ch == ' ' || ch == '\t') && !inQuote:
+		case !inQuote && (ch == '\'' || ch == '"'):
+			if cur.Len() == 0 {
+				if ch == '\'' {
+					curKind = TokenSingleQuoted
+				} else {
+					curKind = TokenDoubleQuoted
+				}
+			} else {
+				curKind = TokenWord
+			}
+			inQuote = true
+			quoteChar = ch
+		case inQuote && ch == quoteChar:
+			inQuote = false
+		case !inQuote && (ch == ' ' || ch == '\t'):
 			if cur.Len() > 0 {
-				tokens = append(tokens, cur.String())
+				tokens = append(tokens, Token{curKind, cur.String()})
 				cur.Reset()
+				curKind = TokenWord
 			}
 		default:
+			if !inQuote {
+				curKind = TokenWord
+			}
 			cur.WriteByte(ch)
 		}
 	}
 	if inQuote {
-		return nil, fmt.Errorf("unclosed single quote")
+		return nil, fmt.Errorf("unclosed quote")
 	}
 	if cur.Len() > 0 {
-		tokens = append(tokens, cur.String())
+		tokens = append(tokens, Token{curKind, cur.String()})
 	}
 	return tokens, nil
+}
+
+func tokenValues(tokens []Token) []string {
+	vals := make([]string, len(tokens))
+	for i, t := range tokens {
+		vals[i] = t.Value
+	}
+	return vals
 }
 
 func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cmd) error) {
@@ -60,14 +86,14 @@ func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cm
 		fmt.Fprintf(errOut, "error: %v\n", err)
 		return
 	}
-	name, args := tokens[0], tokens[1:]
+	name, args := tokens[0].Value, tokens[1:]
 	if fn, ok := Builtins[name]; ok {
 		if err := fn(args, out); err != nil {
 			fmt.Fprintf(errOut, "error: %v\n", err)
 		}
 		return
 	}
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, tokenValues(args)...)
 	SetCurrentCmd(cmd)
 	if err := runCmd(cmd); err != nil {
 		fmt.Fprintf(errOut, "error: %v\n", err)

@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -86,19 +87,35 @@ func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cm
 		fmt.Fprintf(errOut, "error: %v\n", err)
 		return
 	}
+
+	dir, _ := os.Getwd()
+	start := time.Now()
+	code := 0
+
 	name, args := tokens[0].Value, tokens[1:]
 	if fn, ok := Builtins[name]; ok {
 		if err := fn(args, out); err != nil {
 			fmt.Fprintf(errOut, "error: %v\n", err)
+			code = 1
 		}
-		return
+	} else {
+		cmd := exec.Command(name, tokenValues(args)...)
+		SetCurrentCmd(cmd)
+		if err := runCmd(cmd); err != nil {
+			fmt.Fprintf(errOut, "error: %v\n", err)
+			code = exitCode(err)
+		}
+		ClearCurrentCmd()
 	}
-	cmd := exec.Command(name, tokenValues(args)...)
-	SetCurrentCmd(cmd)
-	if err := runCmd(cmd); err != nil {
-		fmt.Fprintf(errOut, "error: %v\n", err)
-	}
-	ClearCurrentCmd()
+
+	appendHistory(HistoryEntry{
+		Command:   line,
+		Dir:       dir,
+		ExitCode:  code,
+		StartTime: start,
+		EndTime:   time.Now(),
+		SessionID: sessionID,
+	})
 }
 
 func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {

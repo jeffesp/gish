@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,11 @@ func words(vals ...string) []Token {
 		tokens[i] = Token{Kind: TokenWord, Value: v}
 	}
 	return tokens
+}
+
+func testCtx(args []Token, out io.Writer) *ExecCtx {
+	tokens := append([]Token{{TokenWord, "test"}}, args...)
+	return &ExecCtx{In: strings.NewReader(""), Tokens: tokens, Out: out, ErrOut: io.Discard}
 }
 
 func TestBuiltinEcho(t *testing.T) {
@@ -36,7 +42,7 @@ func TestBuiltinEcho(t *testing.T) {
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
-		if err := builtinEcho(c.args, &buf); err != nil {
+		if err := builtinEcho(testCtx(c.args, &buf)); err != nil {
 			t.Errorf("echo(%v): unexpected error: %v", c.args, err)
 		}
 		if got := buf.String(); got != c.want {
@@ -49,7 +55,7 @@ func TestBuiltinSet(t *testing.T) {
 	defer os.Unsetenv("GISH_SET_TEST")
 
 	var buf bytes.Buffer
-	if err := builtinSet(words("GISH_SET_TEST", "hello"), &buf); err != nil {
+	if err := builtinSet(testCtx(words("GISH_SET_TEST", "hello"), &buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := os.Getenv("GISH_SET_TEST"); got != "hello" {
@@ -59,13 +65,13 @@ func TestBuiltinSet(t *testing.T) {
 
 func TestBuiltinSetErrors(t *testing.T) {
 	var buf bytes.Buffer
-	if err := builtinSet(words(), &buf); err == nil {
+	if err := builtinSet(testCtx(words(), &buf)); err == nil {
 		t.Error("expected error for zero args")
 	}
-	if err := builtinSet(words("KEY"), &buf); err == nil {
+	if err := builtinSet(testCtx(words("KEY"), &buf)); err == nil {
 		t.Error("expected error for one arg")
 	}
-	if err := builtinSet(words("KEY", "VAL", "EXTRA"), &buf); err == nil {
+	if err := builtinSet(testCtx(words("KEY", "VAL", "EXTRA"), &buf)); err == nil {
 		t.Error("expected error for three args")
 	}
 }
@@ -73,7 +79,7 @@ func TestBuiltinSetErrors(t *testing.T) {
 func TestBuiltinUnset(t *testing.T) {
 	os.Setenv("GISH_UNSET_TEST", "value")
 	var buf bytes.Buffer
-	if err := builtinUnset(words("GISH_UNSET_TEST"), &buf); err != nil {
+	if err := builtinUnset(testCtx(words("GISH_UNSET_TEST"), &buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := os.Getenv("GISH_UNSET_TEST"); got != "" {
@@ -83,10 +89,10 @@ func TestBuiltinUnset(t *testing.T) {
 
 func TestBuiltinUnsetErrors(t *testing.T) {
 	var buf bytes.Buffer
-	if err := builtinUnset(words(), &buf); err == nil {
+	if err := builtinUnset(testCtx(words(), &buf)); err == nil {
 		t.Error("expected error for zero args")
 	}
-	if err := builtinUnset(words("A", "B"), &buf); err == nil {
+	if err := builtinUnset(testCtx(words("A", "B"), &buf)); err == nil {
 		t.Error("expected error for two args")
 	}
 }
@@ -96,7 +102,7 @@ func TestBuiltinEnv(t *testing.T) {
 	defer os.Unsetenv("GISH_ENV_TEST")
 
 	var buf bytes.Buffer
-	if err := builtinEnv(words(), &buf); err != nil {
+	if err := builtinEnv(testCtx(words(), &buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(buf.String(), "GISH_ENV_TEST=present") {
@@ -111,7 +117,7 @@ func TestBuiltinCd(t *testing.T) {
 	tmp := t.TempDir()
 	var buf bytes.Buffer
 
-	if err := builtinCd(words(tmp), &buf); err != nil {
+	if err := builtinCd(testCtx(words(tmp), &buf)); err != nil {
 		t.Fatalf("cd to tmp: unexpected error: %v", err)
 	}
 	got, _ := os.Getwd()
@@ -129,7 +135,7 @@ func TestBuiltinCdHome(t *testing.T) {
 
 	home := os.Getenv("HOME")
 	var buf bytes.Buffer
-	if err := builtinCd(words(), &buf); err != nil {
+	if err := builtinCd(testCtx(words(), &buf)); err != nil {
 		t.Fatalf("cd home: unexpected error: %v", err)
 	}
 	got, _ := os.Getwd()
@@ -142,17 +148,17 @@ func TestBuiltinCdHome(t *testing.T) {
 
 func TestBuiltinCdErrors(t *testing.T) {
 	var buf bytes.Buffer
-	if err := builtinCd(words("a", "b"), &buf); err == nil {
+	if err := builtinCd(testCtx(words("a", "b"), &buf)); err == nil {
 		t.Error("expected error for two args")
 	}
-	if err := builtinCd(words("/nonexistent/path/gish"), &buf); err == nil {
+	if err := builtinCd(testCtx(words("/nonexistent/path/gish"), &buf)); err == nil {
 		t.Error("expected error for nonexistent path")
 	}
 }
 
 func TestBuiltinClear(t *testing.T) {
 	var buf bytes.Buffer
-	if err := builtinClear(words(), &buf); err != nil {
+	if err := builtinClear(testCtx(words(), &buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(buf.String(), "\033[") {

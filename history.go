@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,11 +130,13 @@ func exitCode(err error) int {
 	return 1
 }
 
-func builtinHistory(args []Token, w io.Writer) error {
+func builtinHistory(ctx *ExecCtx) error {
 	entries, err := loadHistory()
 	if err != nil {
 		return fmt.Errorf("history: %w", err)
 	}
+
+	args := ctx.Args()
 
 	var (
 		limit   int
@@ -228,7 +229,7 @@ func builtinHistory(args []Token, w io.Writer) error {
 
 	for i, e := range filtered {
 		dur := e.EndTime.Sub(e.StartTime).Round(time.Millisecond)
-		fmt.Fprintf(w, "%5d  %s  [%s] exit=%d dur=%v  %s\n",
+		fmt.Fprintf(ctx.Out, "%5d  %s  [%s] exit=%d dur=%v  %s\n",
 			i+1,
 			e.StartTime.Format("2006-01-02 15:04:05"),
 			e.Dir,

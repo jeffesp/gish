@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 )
 
-type BuiltinFunc func(args []Token, w io.Writer) error
+type BuiltinFunc func(ctx *ExecCtx) error
 
 var Builtins = map[string]BuiltinFunc{}
 
@@ -24,28 +23,31 @@ func init() {
 	RegisterBuiltin("cd", builtinCd)
 }
 
-func builtinSet(args []Token, w io.Writer) error {
+func builtinSet(ctx *ExecCtx) error {
+	args := ctx.Args()
 	if len(args) != 2 {
 		return fmt.Errorf("usage: set KEY VALUE")
 	}
 	return os.Setenv(args[0].Value, args[1].Value)
 }
 
-func builtinUnset(args []Token, w io.Writer) error {
+func builtinUnset(ctx *ExecCtx) error {
+	args := ctx.Args()
 	if len(args) != 1 {
 		return fmt.Errorf("usage: unset KEY")
 	}
 	return os.Unsetenv(args[0].Value)
 }
 
-func builtinEnv(args []Token, w io.Writer) error {
+func builtinEnv(ctx *ExecCtx) error {
 	for _, e := range os.Environ() {
-		fmt.Fprintln(w, e)
+		fmt.Fprintln(ctx.Out, e)
 	}
 	return nil
 }
 
-func builtinCd(args []Token, w io.Writer) error {
+func builtinCd(ctx *ExecCtx) error {
+	args := ctx.Args()
 	var dir string
 	switch len(args) {
 	case 0:
@@ -58,12 +60,13 @@ func builtinCd(args []Token, w io.Writer) error {
 	return os.Chdir(dir)
 }
 
-func builtinClear(args []Token, w io.Writer) error {
-	fmt.Fprint(w, "\033[H\033[2J")
+func builtinClear(ctx *ExecCtx) error {
+	fmt.Fprint(ctx.Out, "\033[H\033[2J")
 	return nil
 }
 
-func builtinEcho(args []Token, w io.Writer) error {
+func builtinEcho(ctx *ExecCtx) error {
+	args := ctx.Args()
 	expanded := make([]string, len(args))
 	for i, arg := range args {
 		if arg.Kind == TokenSingleQuoted {
@@ -74,6 +77,6 @@ func builtinEcho(args []Token, w io.Writer) error {
 			expanded[i] = arg.Value
 		}
 	}
-	fmt.Fprintln(w, strings.Join(expanded, " "))
+	fmt.Fprintln(ctx.Out, strings.Join(expanded, " "))
 	return nil
 }

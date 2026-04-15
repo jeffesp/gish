@@ -19,12 +19,12 @@ type readWriter struct {
 	io.Writer
 }
 
-func RunREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {
-	if f, ok := in.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		runRawREPL(f, out, errOut, afterCmd)
+func RunREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+	if f, ok := ctx.In.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		runRawREPL(ctx, afterCmd)
 		return
 	}
-	runScannerREPL(in, out, errOut, afterCmd)
+	runScannerREPL(ctx, afterCmd)
 }
 
 func tokenize(line string) ([]Token, error) {
@@ -81,35 +81,36 @@ func tokenValues(tokens []Token) []string {
 	return vals
 }
 
-func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cmd) error) {
+func execLine(line string, ctx *ExecCtx, runCmd func(*exec.Cmd) error) {
 	tokens, err := tokenize(line)
 	if err != nil {
-		fmt.Fprintf(errOut, "error: %v\n", err)
+		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
 		return
 	}
+	ctx.Line = line
+	ctx.Tokens = tokens
 
 	dir, _ := os.Getwd()
 	start := time.Now()
 	code := 0
 
-	name, args := tokens[0].Value, tokens[1:]
-	if fn, ok := Builtins[name]; ok {
-		if err := fn(args, out); err != nil {
-			fmt.Fprintf(errOut, "error: %v\n", err)
+	if fn, ok := Builtins[ctx.Name()]; ok {
+		if err := fn(ctx); err != nil {
+			fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
 			code = 1
 		}
 	} else {
-		cmd := exec.Command(name, tokenValues(args)...)
+		cmd := exec.Command(ctx.Name(), tokenValues(ctx.Args())...)
 		SetCurrentCmd(cmd)
 		if err := runCmd(cmd); err != nil {
-			fmt.Fprintf(errOut, "error: %v\n", err)
+			fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
 			code = exitCode(err)
 		}
 		ClearCurrentCmd()
 	}
 
 	appendHistory(HistoryEntry{
-		Command:   line,
+		Command:   ctx.Line,
 		Dir:       dir,
 		ExitCode:  code,
 		StartTime: start,
@@ -118,16 +119,17 @@ func execLine(line string, out io.Writer, errOut io.Writer, runCmd func(*exec.Cm
 	})
 }
 
-func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {
+func runRawREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+	in := ctx.In.(*os.File)
 	fd := int(in.Fd())
 	origState, err := term.MakeRaw(fd)
 	if err != nil {
-		runScannerREPL(in, out, errOut, afterCmd)
+		runScannerREPL(ctx, afterCmd)
 		return
 	}
 	defer term.Restore(fd, origState)
 
-	t := term.NewTerminal(readWriter{in, out}, "gish> ")
+	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
 
 	if w, h, err := term.GetSize(fd); err == nil {
 		t.SetSize(w, h)
@@ -144,6 +146,8 @@ func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func(io.W
 		}
 	}()
 
+	termCtx := &ExecCtx{In: in, Out: t, ErrOut: t}
+
 	for {
 		line, err := t.ReadLine()
 		if err != nil {
@@ -151,10 +155,10 @@ func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func(io.W
 		}
 
 		if line = strings.TrimSpace(line); line != "" {
-			execLine(line, t, t, func(cmd *exec.Cmd) error {
+			execLine(line, termCtx, func(cmd *exec.Cmd) error {
 				cmd.Stdin = in
-				cmd.Stdout = out
-				cmd.Stderr = errOut
+				cmd.Stdout = ctx.Out
+				cmd.Stderr = ctx.ErrOut
 				term.Restore(fd, origState)
 				err := cmd.Run()
 				term.MakeRaw(fd) //nolint:errcheck
@@ -163,24 +167,24 @@ func runRawREPL(in *os.File, out io.Writer, errOut io.Writer, afterCmd func(io.W
 		}
 
 		if afterCmd != nil {
-			afterCmd(t, t)
+			afterCmd(termCtx)
 		}
 	}
 }
 
-func runScannerREPL(in io.Reader, out io.Writer, errOut io.Writer, afterCmd func(io.Writer, io.Writer)) {
-	scanner := bufio.NewScanner(in)
+func runScannerREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+	scanner := bufio.NewScanner(ctx.In)
 	for {
-		fmt.Fprint(out, "gish> ")
+		fmt.Fprint(ctx.Out, "gish> ")
 		if !scanner.Scan() {
 			break
 		}
 
 		if line := strings.TrimSpace(scanner.Text()); line != "" {
-			execLine(line, out, errOut, func(cmd *exec.Cmd) error {
-				cmd.Stdin = in
-				cmd.Stdout = out
-				cmd.Stderr = errOut
+			execLine(line, ctx, func(cmd *exec.Cmd) error {
+				cmd.Stdin = ctx.In
+				cmd.Stdout = ctx.Out
+				cmd.Stderr = ctx.ErrOut
 				return cmd.Run()
 			})
 		}

@@ -40,9 +40,6 @@ func SetupSignals(out io.Writer) {
 				activeCmdMu.Unlock()
 				if cmd != nil && cmd.Process != nil {
 					cmd.Process.Signal(os.Interrupt)
-				} else {
-					fmt.Fprintln(out)
-					os.Exit(0)
 				}
 			case syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGHUP:
 				fmt.Fprintln(out)

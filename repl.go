@@ -147,6 +147,7 @@ func runRawREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
 	}()
 
 	termCtx := &ExecCtx{In: in, Out: t, ErrOut: t}
+	InitScripting(termCtx)
 
 	for {
 		line, err := t.ReadLine()
@@ -173,6 +174,7 @@ func runRawREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
 }
 
 func runScannerREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+	InitScripting(ctx)
 	scanner := bufio.NewScanner(ctx.In)
 	for {
 		fmt.Fprint(ctx.Out, "gish> ")

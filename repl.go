@@ -138,6 +138,7 @@ func runRawREPL(ctx *ExecCtx) {
 	winch := make(chan os.Signal, 1)
 	signal.Notify(winch, syscall.SIGWINCH)
 	defer signal.Stop(winch)
+	defer close(winch)
 	go func() {
 		for range winch {
 			if w, h, err := term.GetSize(fd); err == nil {

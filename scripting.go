@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,12 +40,7 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 			jsCtx := vm.NewObject()
 			jsCtx.Set("line", bCtx.Line)
 			jsCtx.Set("name", bCtx.Name())
-			args := bCtx.Args()
-			vals := make([]string, len(args))
-			for i, a := range args {
-				vals[i] = a.Value
-			}
-			jsCtx.Set("args", vals)
+			jsCtx.Set("args", tokenValues(bCtx.Args()))
 
 			val, err := callSafe(cb, goja.Undefined(), jsCtx)
 			if err != nil {
@@ -73,12 +67,7 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	// gish.exec(cmd, args)
 	gishObj.Set("exec", func(call goja.FunctionCall) goja.Value {
 		cmdName := call.Argument(0).String()
-		var cmdArgs []string
-		if arg1 := call.Argument(1); !goja.IsUndefined(arg1) && !goja.IsNull(arg1) {
-			if err := vm.ExportTo(arg1, &cmdArgs); err != nil {
-				panic(vm.NewTypeError("args must be an array of strings"))
-			}
-		}
+		cmdArgs := exportStringSlice(vm, call.Argument(1))
 
 		cmd := exec.Command(cmdName, cmdArgs...)
 		var stdout, stderr strings.Builder
@@ -104,12 +93,7 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	// gish.spawn(cmd, args, onLine) — streaming line-by-line output
 	gishObj.Set("spawn", func(call goja.FunctionCall) goja.Value {
 		cmdName := call.Argument(0).String()
-		var cmdArgs []string
-		if arg1 := call.Argument(1); !goja.IsUndefined(arg1) && !goja.IsNull(arg1) {
-			if err := vm.ExportTo(arg1, &cmdArgs); err != nil {
-				panic(vm.NewTypeError("args must be an array of strings"))
-			}
-		}
+		cmdArgs := exportStringSlice(vm, call.Argument(1))
 		cb, ok := goja.AssertFunction(call.Argument(2))
 		if !ok {
 			panic(vm.NewTypeError("third argument must be a function"))
@@ -138,8 +122,6 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 				panic(vm.NewGoError(cbErr))
 			}
 		}
-		// Drain stdout pipe so Wait doesn't block
-		io.Copy(io.Discard, stdout)
 
 		waitErr := cmd.Wait()
 		result := vm.NewObject()
@@ -222,11 +204,7 @@ func builtinJS(ctx *ExecCtx) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: js <expression>")
 	}
-	vals := make([]string, len(args))
-	for i, a := range args {
-		vals[i] = a.Value
-	}
-	expr := strings.Join(vals, " ")
+	expr := strings.Join(tokenValues(args), " ")
 
 	val, err := jsVM.RunString(expr)
 	if err != nil {
@@ -278,6 +256,17 @@ func loadScripts(vm *goja.Runtime, ctx *ExecCtx) {
 			fmt.Fprintf(ctx.ErrOut, "gish: script %s: %v\n", filepath.Base(path), err)
 		}
 	}
+}
+
+func exportStringSlice(vm *goja.Runtime, val goja.Value) []string {
+	if goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil
+	}
+	var out []string
+	if err := vm.ExportTo(val, &out); err != nil {
+		panic(vm.NewTypeError("args must be an array of strings"))
+	}
+	return out
 }
 
 // callSafe invokes a goja callable, recovering from panics thrown by the runtime.

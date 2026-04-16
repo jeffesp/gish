@@ -10,7 +10,6 @@ type ExecCtx struct {
 	ErrOut io.Writer
 }
 
-// Args returns the argument tokens (everything after the command name).
 func (ctx *ExecCtx) Args() []Token {
 	if len(ctx.Tokens) < 2 {
 		return nil
@@ -18,7 +17,6 @@ func (ctx *ExecCtx) Args() []Token {
 	return ctx.Tokens[1:]
 }
 
-// Name returns the command name (first token value).
 func (ctx *ExecCtx) Name() string {
 	if len(ctx.Tokens) == 0 {
 		return ""

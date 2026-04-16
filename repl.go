@@ -19,12 +19,12 @@ type readWriter struct {
 	io.Writer
 }
 
-func RunREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+func RunREPL(ctx *ExecCtx) {
 	if f, ok := ctx.In.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		runRawREPL(ctx, afterCmd)
+		runRawREPL(ctx)
 		return
 	}
-	runScannerREPL(ctx, afterCmd)
+	runScannerREPL(ctx)
 }
 
 func tokenize(line string) ([]Token, error) {
@@ -119,12 +119,12 @@ func execLine(line string, ctx *ExecCtx, runCmd func(*exec.Cmd) error) {
 	})
 }
 
-func runRawREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+func runRawREPL(ctx *ExecCtx) {
 	in := ctx.In.(*os.File)
 	fd := int(in.Fd())
 	origState, err := term.MakeRaw(fd)
 	if err != nil {
-		runScannerREPL(ctx, afterCmd)
+		runScannerREPL(ctx)
 		return
 	}
 	defer term.Restore(fd, origState)
@@ -166,14 +166,10 @@ func runRawREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
 				return err
 			})
 		}
-
-		if afterCmd != nil {
-			afterCmd(termCtx)
-		}
 	}
 }
 
-func runScannerREPL(ctx *ExecCtx, afterCmd func(*ExecCtx)) {
+func runScannerREPL(ctx *ExecCtx) {
 	InitScripting(ctx)
 	scanner := bufio.NewScanner(ctx.In)
 	for {

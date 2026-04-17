@@ -82,6 +82,11 @@ func tokenValues(tokens []Token) []string {
 }
 
 func execLine(line string, ctx *ExecCtx, runCmd func(*exec.Cmd) error) {
+	if expanded, ok := expandHistory(line); ok {
+		fmt.Fprintln(ctx.Out, expanded)
+		line = expanded
+	}
+
 	tokens, err := tokenize(line)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
@@ -146,6 +151,8 @@ func runRawREPL(ctx *ExecCtx) {
 			}
 		}
 	}()
+
+	t.History = newTermHistory()
 
 	termCtx := &ExecCtx{In: in, Out: t, ErrOut: t}
 	InitScripting(termCtx)

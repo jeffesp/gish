@@ -119,6 +119,72 @@ func writeHistory(entries []HistoryEntry) {
 	}
 }
 
+const termHistorySize = 100
+
+// termHistory implements the term.History interface backed by in-memory entries
+// seeded from the history file. New entries are added in-memory only;
+// file persistence happens in execLine via appendHistory.
+type termHistory struct {
+	entries []string
+	max     int
+}
+
+func newTermHistory() *termHistory {
+	h := &termHistory{max: termHistorySize}
+	if entries, err := loadHistory(); err == nil {
+		start := 0
+		if len(entries) > h.max {
+			start = len(entries) - h.max
+		}
+		for _, e := range entries[start:] {
+			h.entries = append(h.entries, e.Command)
+		}
+	}
+	return h
+}
+
+func (h *termHistory) Add(entry string) {
+	h.entries = append(h.entries, entry)
+	if len(h.entries) > h.max {
+		h.entries = h.entries[len(h.entries)-h.max:]
+	}
+}
+
+func (h *termHistory) Len() int {
+	return len(h.entries)
+}
+
+// At returns the entry at index idx, where 0 is the most recent.
+func (h *termHistory) At(idx int) string {
+	return h.entries[len(h.entries)-1-idx]
+}
+
+// expandHistory handles !! (last command) and !prefix (most recent match).
+// Returns the expanded line and true, or the original line and false.
+func expandHistory(line string) (string, bool) {
+	if line == "!!" {
+		entries, err := loadHistory()
+		if err != nil || len(entries) == 0 {
+			return line, false
+		}
+		return entries[len(entries)-1].Command, true
+	}
+	if strings.HasPrefix(line, "!") && len(line) > 1 && line[1] != ' ' {
+		prefix := line[1:]
+		entries, err := loadHistory()
+		if err != nil {
+			return line, false
+		}
+		for i := len(entries) - 1; i >= 0; i-- {
+			if strings.HasPrefix(entries[i].Command, prefix) {
+				return entries[i].Command, true
+			}
+		}
+		return line, false
+	}
+	return line, false
+}
+
 func exitCode(err error) int {
 	if err == nil {
 		return 0

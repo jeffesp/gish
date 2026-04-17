@@ -416,6 +416,135 @@ func TestBuiltinHistoryCombinedFilters(t *testing.T) {
 	}
 }
 
+func TestTermHistorySeeding(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	now := time.Now()
+	for i := range 5 {
+		appendHistory(HistoryEntry{
+			Command: fmt.Sprintf("cmd %d", i), Dir: "/tmp", ExitCode: 0,
+			StartTime: now, EndTime: now, SessionID: "1",
+		})
+	}
+
+	h := newTermHistory()
+	if h.Len() != 5 {
+		t.Fatalf("Len() = %d, want 5", h.Len())
+	}
+	if got := h.At(0); got != "cmd 4" {
+		t.Errorf("At(0) = %q, want %q", got, "cmd 4")
+	}
+	if got := h.At(4); got != "cmd 0" {
+		t.Errorf("At(4) = %q, want %q", got, "cmd 0")
+	}
+}
+
+func TestTermHistorySeedingCapsAtMax(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	now := time.Now()
+	for i := range 150 {
+		appendHistory(HistoryEntry{
+			Command: fmt.Sprintf("cmd %d", i), Dir: "/tmp", ExitCode: 0,
+			StartTime: now, EndTime: now, SessionID: "1",
+		})
+	}
+
+	h := newTermHistory()
+	if h.Len() != termHistorySize {
+		t.Fatalf("Len() = %d, want %d", h.Len(), termHistorySize)
+	}
+	if got := h.At(0); got != "cmd 149" {
+		t.Errorf("At(0) = %q, want %q", got, "cmd 149")
+	}
+}
+
+func TestTermHistoryAdd(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	h := newTermHistory()
+	h.Add("new cmd")
+	if h.Len() != 1 {
+		t.Fatalf("Len() = %d, want 1", h.Len())
+	}
+	if got := h.At(0); got != "new cmd" {
+		t.Errorf("At(0) = %q, want %q", got, "new cmd")
+	}
+}
+
+func TestExpandHistoryBang(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	now := time.Now()
+	appendHistory(HistoryEntry{
+		Command: "echo hello", Dir: "/tmp", ExitCode: 0,
+		StartTime: now, EndTime: now, SessionID: "1",
+	})
+	appendHistory(HistoryEntry{
+		Command: "ls -la", Dir: "/tmp", ExitCode: 0,
+		StartTime: now, EndTime: now, SessionID: "1",
+	})
+
+	// !! should return last command
+	expanded, ok := expandHistory("!!")
+	if !ok {
+		t.Fatal("!! should expand")
+	}
+	if expanded != "ls -la" {
+		t.Errorf("!! = %q, want %q", expanded, "ls -la")
+	}
+
+	// !echo should match "echo hello"
+	expanded, ok = expandHistory("!echo")
+	if !ok {
+		t.Fatal("!echo should expand")
+	}
+	if expanded != "echo hello" {
+		t.Errorf("!echo = %q, want %q", expanded, "echo hello")
+	}
+
+	// !ls should match "ls -la" (most recent)
+	expanded, ok = expandHistory("!ls")
+	if !ok {
+		t.Fatal("!ls should expand")
+	}
+	if expanded != "ls -la" {
+		t.Errorf("!ls = %q, want %q", expanded, "ls -la")
+	}
+
+	// !nonexistent should not expand
+	_, ok = expandHistory("!nonexistent")
+	if ok {
+		t.Error("!nonexistent should not expand")
+	}
+
+	// Regular line should not expand
+	_, ok = expandHistory("echo hello")
+	if ok {
+		t.Error("regular line should not expand")
+	}
+
+	// "! cmd" (space after !) should not expand
+	_, ok = expandHistory("! echo")
+	if ok {
+		t.Error("'! echo' should not expand")
+	}
+}
+
+func TestExpandHistoryEmptyHistory(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	_, ok := expandHistory("!!")
+	if ok {
+		t.Error("!! with empty history should not expand")
+	}
+}
+
 func TestBuiltinHistoryBadArgs(t *testing.T) {
 	_, cleanup := withTestHistory(t)
 	defer cleanup()

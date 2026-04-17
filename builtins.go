@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 )
 
 type BuiltinFunc func(ctx *ExecCtx) error
@@ -21,6 +23,7 @@ func init() {
 	RegisterBuiltin("clear", builtinClear)
 	RegisterBuiltin("echo", builtinEcho)
 	RegisterBuiltin("cd", builtinCd)
+	RegisterBuiltin("exec", builtinExec)
 }
 
 func builtinSet(ctx *ExecCtx) error {
@@ -63,6 +66,19 @@ func builtinCd(ctx *ExecCtx) error {
 func builtinClear(ctx *ExecCtx) error {
 	fmt.Fprint(ctx.Out, "\033[H\033[2J")
 	return nil
+}
+
+func builtinExec(ctx *ExecCtx) error {
+	args := ctx.Args()
+	if len(args) == 0 {
+		return fmt.Errorf("usage: exec command [args...]")
+	}
+	bin, err := exec.LookPath(args[0].Value)
+	if err != nil {
+		return err
+	}
+	argv := tokenValues(args)
+	return syscall.Exec(bin, argv, os.Environ())
 }
 
 func builtinEcho(ctx *ExecCtx) error {

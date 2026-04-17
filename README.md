@@ -1,10 +1,15 @@
 # gish
 
-This is a shell written in Go. It is not compatible with other shells, although it should not feel too far off if you want to use it.
+This is a shell written in Go. A 'go-ish' shell. It is not compatible with other shells, although if you only do basic stuff (and do not rely on scripts) it will work fine.
+
+It is built only for my use, and I do not have particularly complex requirements. At least in some respects. My day-to-day at the
+command prompt is pretty simple. I only use a few keyboard shortcuts to navigate the input, and only do very basic stuff. But I also
+want to have more capability for scripting with a real language, which is the motive for this project. I want to use JS for that, and
+add support for structured pipelines. It is not there yet.
 
 ## JavaScript Scripting
 
-Gish embeds a JavaScript runtime ([goja](https://github.com/dop251/goja)) so you can define custom commands in `.js` files. Scripts are loaded from `$GISH_SCRIPTS_DIR` or `~/.config/gish/scripts/` at startup. Files are loaded in alphabetical order — prefix with `01-`, `02-`, etc. to control ordering.
+`gish` embeds a JavaScript runtime ([goja](https://github.com/dop251/goja)) so you can define custom commands in `.js` files. Scripts are loaded from `$GISH_SCRIPTS_DIR` or `~/.config/gish/scripts/` at startup. Files are loaded in alphabetical order — prefix with `01-`, `02-`, etc. to control ordering.
 
 ### Inline JS
 

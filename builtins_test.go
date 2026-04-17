@@ -23,20 +23,12 @@ func testCtx(args []Token, out io.Writer) *ExecCtx {
 }
 
 func TestBuiltinEcho(t *testing.T) {
-	os.Setenv("GISH_TEST_VAR", "world")
-	defer os.Unsetenv("GISH_TEST_VAR")
-
 	cases := []struct {
 		args []Token
 		want string
 	}{
 		{words("hello"), "hello\n"},
 		{words("hello", "world"), "hello world\n"},
-		{words("$GISH_TEST_VAR"), "world\n"},
-		// single-quoted: no expansion
-		{[]Token{{TokenSingleQuoted, "$GISH_TEST_VAR"}}, "$GISH_TEST_VAR\n"},
-		// double-quoted: expansion (same as bare word for now)
-		{[]Token{{TokenDoubleQuoted, "$GISH_TEST_VAR"}}, "world\n"},
 		// no args
 		{[]Token{}, "\n"},
 	}
@@ -153,6 +145,45 @@ func TestBuiltinCdErrors(t *testing.T) {
 	}
 	if err := builtinCd(testCtx(words("/nonexistent/path/gish"), &buf)); err == nil {
 		t.Error("expected error for nonexistent path")
+	}
+}
+
+func TestExecLineExpansion(t *testing.T) {
+	os.Setenv("GISH_EXEC_TEST", "expanded")
+	defer os.Unsetenv("GISH_EXEC_TEST")
+
+	var buf bytes.Buffer
+	ctx := &ExecCtx{In: strings.NewReader(""), Out: &buf, ErrOut: io.Discard}
+	execLine("echo $GISH_EXEC_TEST", ctx, nil)
+	if got := buf.String(); got != "expanded\n" {
+		t.Errorf("execLine echo $VAR: got %q want %q", got, "expanded\n")
+	}
+
+	// single-quoted should not expand
+	buf.Reset()
+	execLine("echo '$GISH_EXEC_TEST'", ctx, nil)
+	if got := buf.String(); got != "$GISH_EXEC_TEST\n" {
+		t.Errorf("execLine echo single-quoted: got %q want %q", got, "$GISH_EXEC_TEST\n")
+	}
+}
+
+func TestExecLineCdExpansion(t *testing.T) {
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+
+	tmp := t.TempDir()
+	os.Setenv("GISH_CD_TEST", tmp)
+	defer os.Unsetenv("GISH_CD_TEST")
+
+	var buf bytes.Buffer
+	ctx := &ExecCtx{In: strings.NewReader(""), Out: &buf, ErrOut: io.Discard}
+	execLine("cd $GISH_CD_TEST", ctx, nil)
+
+	got, _ := os.Getwd()
+	gotR, _ := filepath.EvalSymlinks(got)
+	tmpR, _ := filepath.EvalSymlinks(tmp)
+	if gotR != tmpR {
+		t.Errorf("cd $GISH_CD_TEST: cwd=%q want=%q", gotR, tmpR)
 	}
 }
 

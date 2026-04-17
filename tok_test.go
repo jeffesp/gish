@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 )
 
@@ -42,5 +43,32 @@ func TestTokenize(t *testing.T) {
 				t.Errorf("%q token[%d]: kind=%d want=%d", c.input, i, tok.Kind, c.wantKinds[i])
 			}
 		}
+	}
+}
+
+func TestExpandTokens(t *testing.T) {
+	os.Setenv("GISH_EXP_TEST", "hello")
+	defer os.Unsetenv("GISH_EXP_TEST")
+
+	cases := []struct {
+		name  string
+		input Token
+		want  string
+	}{
+		{"bare var", Token{TokenWord, "$GISH_EXP_TEST"}, "hello"},
+		{"braced var", Token{TokenWord, "${GISH_EXP_TEST}"}, "hello"},
+		{"embedded var", Token{TokenWord, "say$GISH_EXP_TEST"}, "sayhello"},
+		{"double quoted", Token{TokenDoubleQuoted, "$GISH_EXP_TEST"}, "hello"},
+		{"single quoted no expand", Token{TokenSingleQuoted, "$GISH_EXP_TEST"}, "$GISH_EXP_TEST"},
+		{"no var", Token{TokenWord, "plain"}, "plain"},
+		{"unset var", Token{TokenWord, "$GISH_UNSET_NONEXISTENT"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := expandToken(c.input)
+			if got.Value != c.want {
+				t.Errorf("expandToken(%v): got %q want %q", c.input, got.Value, c.want)
+			}
+		})
 	}
 }

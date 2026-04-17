@@ -92,6 +92,7 @@ func execLine(line string, ctx *ExecCtx, runCmd func(*exec.Cmd) error) {
 		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
 		return
 	}
+	tokens = expandTokens(tokens)
 	ctx.Line = line
 	ctx.Tokens = tokens
 

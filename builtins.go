@@ -66,17 +66,6 @@ func builtinClear(ctx *ExecCtx) error {
 }
 
 func builtinEcho(ctx *ExecCtx) error {
-	args := ctx.Args()
-	expanded := make([]string, len(args))
-	for i, arg := range args {
-		if arg.Kind == TokenSingleQuoted {
-			expanded[i] = arg.Value
-		} else if len(arg.Value) > 1 && arg.Value[0] == '$' {
-			expanded[i] = os.Getenv(arg.Value[1:])
-		} else {
-			expanded[i] = arg.Value
-		}
-	}
-	fmt.Fprintln(ctx.Out, strings.Join(expanded, " "))
+	fmt.Fprintln(ctx.Out, strings.Join(tokenValues(ctx.Args()), " "))
 	return nil
 }

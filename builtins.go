@@ -80,6 +80,9 @@ func builtinExec(cmd *Command, ctx *ExecCtx) error {
 		return err
 	}
 	argv := tokenValues(args)
+	if ctx.RestoreTerm != nil {
+		ctx.RestoreTerm()
+	}
 	return syscall.Exec(bin, argv, os.Environ())
 }
 

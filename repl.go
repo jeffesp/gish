@@ -101,9 +101,10 @@ func runRawREPL(ctx *ExecCtx) {
 	t.History = newTermHistory()
 
 	termCtx := &ExecCtx{
-		In:     in,
-		Out:    t,
-		ErrOut: t,
+		In:          in,
+		Out:         t,
+		ErrOut:      t,
+		RestoreTerm: func() { term.Restore(fd, origState) },
 		RunCmd: func(cmd *exec.Cmd) error {
 			cmd.Stdin = in
 			cmd.Stdout = ctx.Out

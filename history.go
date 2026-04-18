@@ -196,20 +196,20 @@ func exitCode(err error) int {
 	return 1
 }
 
-func builtinHistory(ctx *ExecCtx) error {
+func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 	entries, err := loadHistory()
 	if err != nil {
 		return fmt.Errorf("history: %w", err)
 	}
 
-	args := ctx.Args()
+	args := cmd.Args()
 
 	var (
-		limit   int
-		since   time.Time
-		until   time.Time
-		onlyOK  bool
-		onlyFail bool
+		limit     int
+		since     time.Time
+		until     time.Time
+		onlyOK    bool
+		onlyFail  bool
 		dirFilter string
 		hasSince  bool
 		hasUntil  bool

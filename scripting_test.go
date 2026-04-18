@@ -23,10 +23,12 @@ func TestJSInlineEval(t *testing.T) {
 
 	ctx := &ExecCtx{
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "js"}, {TokenWord, "2+2"}},
 		Line:   "js 2+2",
 	}
-	if err := builtinJS(ctx); err != nil {
+	if err := builtinJS(cmd, ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := strings.TrimSpace(buf.String()); got != "4" {
@@ -40,10 +42,12 @@ func TestJSInlineMultiToken(t *testing.T) {
 
 	ctx := &ExecCtx{
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "js"}, {TokenWord, "2"}, {TokenWord, "+"}, {TokenWord, "3"}},
 		Line:   "js 2 + 3",
 	}
-	if err := builtinJS(ctx); err != nil {
+	if err := builtinJS(cmd, ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := strings.TrimSpace(buf.String()); got != "5" {
@@ -56,10 +60,12 @@ func TestJSNoArgs(t *testing.T) {
 
 	ctx := &ExecCtx{
 		In: strings.NewReader(""), Out: &bytes.Buffer{}, ErrOut: &bytes.Buffer{},
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "js"}},
 		Line:   "js",
 	}
-	if err := builtinJS(ctx); err == nil {
+	if err := builtinJS(cmd, ctx); err == nil {
 		t.Error("expected error for no args")
 	}
 }
@@ -69,10 +75,12 @@ func TestJSException(t *testing.T) {
 
 	ctx := &ExecCtx{
 		In: strings.NewReader(""), Out: &bytes.Buffer{}, ErrOut: &bytes.Buffer{},
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "js"}, {TokenWord, "throw"}, {TokenWord, "new"}, {TokenWord, `Error("boom")`}},
 		Line:   `js throw new Error("boom")`,
 	}
-	err := builtinJS(ctx)
+	err := builtinJS(cmd, ctx)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -99,10 +107,12 @@ func TestGishRegister(t *testing.T) {
 	buf.Reset()
 	greetCtx := &ExecCtx{
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "greet"}, {TokenWord, "world"}},
 		Line:   "greet world",
 	}
-	if err := fn(greetCtx); err != nil {
+	if err := fn(cmd, greetCtx); err != nil {
 		t.Fatalf("greet error: %v", err)
 	}
 	if got := strings.TrimSpace(buf.String()); got != "hello world" {
@@ -126,10 +136,12 @@ func TestGishRegisterReturnValue(t *testing.T) {
 	buf.Reset()
 	retCtx := &ExecCtx{
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "ret"}},
 		Line:   "ret",
 	}
-	if err := fn(retCtx); err != nil {
+	if err := fn(cmd, retCtx); err != nil {
 		t.Fatalf("ret error: %v", err)
 	}
 	if got := strings.TrimSpace(buf.String()); got != "42" {
@@ -405,10 +417,12 @@ func TestLoadScripts(t *testing.T) {
 	buf.Reset()
 	helloCtx := &ExecCtx{
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
+	}
+	cmd := &Command{
 		Tokens: []Token{{TokenWord, "jshello"}},
 		Line:   "jshello",
 	}
-	if err := fn(helloCtx); err != nil {
+	if err := fn(cmd, helloCtx); err != nil {
 		t.Fatalf("jshello error: %v", err)
 	}
 	if got := strings.TrimSpace(buf.String()); got != "js says hello" {

@@ -1,25 +1,32 @@
 package main
 
-import "io"
+import (
+	"io"
+	"os/exec"
+)
 
 type ExecCtx struct {
-	In     io.Reader // input source (type-assert to *os.File where fd is needed)
-	Line   string    // raw input line as typed
-	Tokens []Token   // parsed tokens (first is command name)
+	In     io.Reader
 	Out    io.Writer
 	ErrOut io.Writer
+	RunCmd func(*exec.Cmd) error // terminal restore/raw mode callback
 }
 
-func (ctx *ExecCtx) Args() []Token {
-	if len(ctx.Tokens) < 2 {
+type Command struct {
+	Tokens []Token
+	Line   string
+}
+
+func (cmd *Command) Args() []Token {
+	if len(cmd.Tokens) < 2 {
 		return nil
 	}
-	return ctx.Tokens[1:]
+	return cmd.Tokens[1:]
 }
 
-func (ctx *ExecCtx) Name() string {
-	if len(ctx.Tokens) == 0 {
+func (cmd *Command) Name() string {
+	if len(cmd.Tokens) == 0 {
 		return ""
 	}
-	return ctx.Tokens[0].Value
+	return cmd.Tokens[0].Value
 }

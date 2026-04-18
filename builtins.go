@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-type BuiltinFunc func(ctx *ExecCtx) error
+type BuiltinFunc func(cmd *Command, ctx *ExecCtx) error
 
 var Builtins = map[string]BuiltinFunc{}
 
@@ -26,36 +26,38 @@ func init() {
 	RegisterBuiltin("exec", builtinExec)
 }
 
-func builtinSet(ctx *ExecCtx) error {
-	args := ctx.Args()
+func builtinSet(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
 	if len(args) != 2 {
 		return fmt.Errorf("usage: set KEY VALUE")
 	}
 	return os.Setenv(args[0].Value, args[1].Value)
 }
 
-func builtinUnset(ctx *ExecCtx) error {
-	args := ctx.Args()
+func builtinUnset(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
 	if len(args) != 1 {
 		return fmt.Errorf("usage: unset KEY")
 	}
 	return os.Unsetenv(args[0].Value)
 }
 
-func builtinEnv(ctx *ExecCtx) error {
+func builtinEnv(cmd *Command, ctx *ExecCtx) error {
 	for _, e := range os.Environ() {
 		fmt.Fprintln(ctx.Out, e)
 	}
 	return nil
 }
 
-func builtinCd(ctx *ExecCtx) error {
-	args := ctx.Args()
+func builtinCd(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
+
 	var dir string
 	switch len(args) {
 	case 0:
 		dir = os.Getenv("HOME")
 	case 1:
+		// TODO: support '-' to go back a dir
 		dir = args[0].Value
 	default:
 		return fmt.Errorf("usage: cd [dir]")
@@ -63,13 +65,13 @@ func builtinCd(ctx *ExecCtx) error {
 	return os.Chdir(dir)
 }
 
-func builtinClear(ctx *ExecCtx) error {
+func builtinClear(cmd *Command, ctx *ExecCtx) error {
 	fmt.Fprint(ctx.Out, "\033[H\033[2J")
 	return nil
 }
 
-func builtinExec(ctx *ExecCtx) error {
-	args := ctx.Args()
+func builtinExec(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
 	if len(args) == 0 {
 		return fmt.Errorf("usage: exec command [args...]")
 	}
@@ -81,7 +83,7 @@ func builtinExec(ctx *ExecCtx) error {
 	return syscall.Exec(bin, argv, os.Environ())
 }
 
-func builtinEcho(ctx *ExecCtx) error {
-	fmt.Fprintln(ctx.Out, strings.Join(tokenValues(ctx.Args()), " "))
+func builtinEcho(cmd *Command, ctx *ExecCtx) error {
+	fmt.Fprintln(ctx.Out, strings.Join(tokenValues(cmd.Args()), " "))
 	return nil
 }

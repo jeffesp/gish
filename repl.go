@@ -39,29 +39,24 @@ func execLine(line string, ctx *ExecCtx) {
 		return
 	}
 	tokens = expandTokens(tokens)
-	cmd := &Command{Tokens: tokens, Line: line}
+
+	exe, err := parseTokens(tokens, line)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
+		return
+	}
 
 	dir, _ := os.Getwd()
 	start := time.Now()
 	code := 0
 
-	if fn, ok := Builtins[cmd.Name()]; ok {
-		if err := fn(cmd, ctx); err != nil {
-			fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
-			code = 1
-		}
-	} else {
-		cmd := exec.Command(cmd.Name(), tokenValues(cmd.Args())...)
-		SetCurrentCmd(cmd)
-		if err := ctx.RunCmd(cmd); err != nil {
-			fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
-			code = exitCode(err)
-		}
-		ClearCurrentCmd()
+	if err := exe.Exec(ctx); err != nil {
+		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
+		code = exitCode(err)
 	}
 
 	appendHistory(HistoryEntry{
-		Command:   cmd.Line,
+		Command:   line,
 		Dir:       dir,
 		ExitCode:  code,
 		StartTime: start,
@@ -82,6 +77,21 @@ func runRawREPL(ctx *ExecCtx) {
 
 	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
 
+	termCtx := &ExecCtx{
+		In:          in,
+		Out:         t,
+		ErrOut:      t,
+		RestoreTerm: func() { term.Restore(fd, origState) },
+		RunCmd: func(cmd *exec.Cmd) error {
+			cmd.Stdin = ctx.In
+			cmd.Stdout = ctx.Out
+			cmd.Stderr = ctx.ErrOut
+			term.Restore(fd, origState)
+			err := cmd.Run()
+			term.MakeRaw(fd) //nolint:errcheck
+			return err
+		}}
+
 	if w, h, err := term.GetSize(fd); err == nil {
 		t.SetSize(w, h)
 	}
@@ -100,20 +110,6 @@ func runRawREPL(ctx *ExecCtx) {
 
 	t.History = newTermHistory()
 
-	termCtx := &ExecCtx{
-		In:          in,
-		Out:         t,
-		ErrOut:      t,
-		RestoreTerm: func() { term.Restore(fd, origState) },
-		RunCmd: func(cmd *exec.Cmd) error {
-			cmd.Stdin = in
-			cmd.Stdout = ctx.Out
-			cmd.Stderr = ctx.ErrOut
-			term.Restore(fd, origState)
-			err := cmd.Run()
-			term.MakeRaw(fd) //nolint:errcheck
-			return err
-		}}
 	InitScripting(termCtx)
 
 	for {

@@ -90,3 +90,37 @@ func tokenValues(tokens []Token) []string {
 	}
 	return vals
 }
+
+func parseTokens(tokens []Token, line string) (Executable, error) {
+	var indices []int
+	for i, t := range tokens {
+		if t.Kind == TokenPipe {
+			indices = append(indices, i)
+		}
+	}
+	if len(indices) == 0 {
+		return &Command{Tokens: tokens, Line: line}, nil
+	}
+
+	// make sure pipe are in valid places
+	if tokens[0].Kind == TokenPipe {
+		return nil, fmt.Errorf("|: cannot start with a pipe")
+	}
+	if tokens[len(tokens)-1].Kind == TokenPipe {
+		return nil, fmt.Errorf("|: cannot end with a pipe")
+	}
+	for i := 1; i < len(indices); i++ {
+		if indices[i] == indices[i-1]+1 {
+			return nil, fmt.Errorf("|: consecutive pipes")
+		}
+	}
+
+	stages := make([]*Command, 0, len(indices)+1)
+	prev := 0
+	for _, idx := range indices {
+		stages = append(stages, &Command{Tokens: tokens[prev:idx]})
+		prev = idx + 1
+	}
+	stages = append(stages, &Command{Tokens: tokens[prev:]})
+	return &Pipeline{Stages: stages}, nil
+}

@@ -66,22 +66,33 @@ type Executable interface {
 
 `Command` and `Pipeline` both implement `Executable`.
 
-**`Command.Exec`**: dispatches to builtin or external command.
+**`Command.Start`**: launches the command (builtin or external) and returns a wait function. Builtin dispatch happens here — callers don't need to know what kind of command it is.
 
 ```go
-func (c *Command) Exec(ctx *ExecCtx) error {
+func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
     if fn, ok := Builtins[c.Name()]; ok {
-        return fn(c, ctx)
+        done := make(chan error, 1)
+        go func() { done <- fn(c, ctx) }()
+        return func() error { return <-done }
     }
     cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
     cmd.Stdin = ctx.In
     cmd.Stdout = ctx.Out
     cmd.Stderr = ctx.ErrOut
-    return ctx.RunCmd(cmd)
+    cmd.Start()
+    return cmd.Wait
 }
 ```
 
-**`Pipeline.Exec`**: wires pipes and runs stages concurrently (see section 4).
+**`Command.Exec`**: starts and immediately waits.
+
+```go
+func (c *Command) Exec(ctx *ExecCtx) error {
+    return c.Start(ctx)()
+}
+```
+
+**`Pipeline.Exec`**: wires pipes, calls `Start` on each stage, and coordinates the wait functions (see section 4). It doesn't branch on builtin vs external — `Start` handles that.
 
 ### Builtin signature change
 
@@ -198,17 +209,13 @@ Use `os.Pipe()` to connect stdout of stage N to stdin of stage N+1.
 
 All stages start concurrently — required because the pipe buffer is finite.
 
-### Builtin stages
+### Stage execution
 
-When a stage is a builtin:
+`Pipeline.Exec` doesn't distinguish builtins from external commands — it calls `stage.Start(childCtx)` for each stage and collects the wait functions. `Start` handles the builtin-vs-external dispatch internally.
 
-- Run it in a goroutine
-- Create a child `ExecCtx` with `In`/`Out` wired to the appropriate pipe ends
-- Close the write end when the builtin returns (so downstream gets EOF)
+For each stage, `Pipeline.Exec` creates a child `ExecCtx` with `In`/`Out` wired to the appropriate pipe ends. After calling `Start`, the parent closes its copies of the pipe ends so EOF propagates correctly.
 
-### External command stages
-
-For external commands in a pipeline, the stage creates its own `exec.Cmd` with stdin/stdout wired to pipe ends. This bypasses `ctx.RunCmd` — the terminal restore/raw mode callback is only relevant for the outermost I/O, which is handled by wiring the first stage's stdin and last stage's stdout to the original handles.
+The terminal restore/raw mode callback (`ctx.RunCmd`) is not used for pipeline stages — `Start` bypasses it. Terminal state management is only relevant for the outermost I/O, which is handled by wiring stage 0's stdin and the last stage's stdout to the original handles.
 
 ### Error handling
 
@@ -219,7 +226,7 @@ When any stage exits non-zero or returns an error:
 3. Wait for all stages to finish
 4. Return the error: `"pipeline stage N (command): exit code X"`
 
-Implementation: a goroutine per stage calls `cmd.Wait()` (external) or waits for the builtin goroutine to finish. Results flow to a shared channel. A coordinator detects the first failure and initiates shutdown.
+A goroutine per stage calls the wait function returned by `Start`. Results flow to a shared channel. A coordinator goroutine detects the first failure and initiates shutdown.
 
 ### Signal handling
 
@@ -263,11 +270,10 @@ A pipeline is one history entry. The `Command` field stores the full pipeline as
    - j. Update `execLine` to use `parse()` → `Executable.Exec()`
 2. **Tokenizer** — add `TokenPipe`, handle `|` in `tokenize()`
 3. **Parser** — `parse()` function, pipeline splitting, validation
-4. **Pipeline struct + Exec** — `os.Pipe()` wiring, concurrent execution, error coordination
-5. **Builtin-in-pipe support** — goroutine wrapper for builtins as pipe stages
-6. **Signal handling** — track all pipeline commands for SIGINT
-7. **JS `gish.pipe()`**
-8. **Tests** — tokenizer, parser, single-command exec, pipeline exec, error propagation, builtins in pipes, JS pipe
+4. **Command.Start + Pipeline.Exec** — `Start` method (unified builtin/external dispatch), `os.Pipe()` wiring, concurrent execution, error coordination. Builtins in pipes fall out naturally from `Start`.
+5. **Signal handling** — track all pipeline commands for SIGINT
+6. **JS `gish.pipe()`**
+7. **Tests** — tokenizer, parser, single-command exec, pipeline exec, error propagation, builtins in pipes, JS pipe
 
 ---
 

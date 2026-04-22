@@ -35,14 +35,14 @@ func execLine(line string, ctx *ExecCtx) {
 
 	tokens, err := tokenize(line)
 	if err != nil {
-		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
 	}
 	tokens = expandTokens(tokens)
 
 	exe, err := parseTokens(tokens, line)
 	if err != nil {
-		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
 	}
 
@@ -51,7 +51,7 @@ func execLine(line string, ctx *ExecCtx) {
 	code := 0
 
 	if err := exe.Exec(ctx); err != nil {
-		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
+		fmt.Fprintf(ctx.ErrOut, " %v\n", err)
 		code = exitCode(err)
 	}
 

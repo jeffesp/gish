@@ -43,7 +43,17 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 }
 
 func (c *Command) Exec(ctx *ExecCtx) error {
-	return c.Start(ctx)()
+	if fn, ok := Builtins[c.Name()]; ok {
+		return fn(c, ctx)
+	}
+	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
+	if ctx.RunCmd != nil {
+		return ctx.RunCmd(cmd)
+	}
+	cmd.Stdin = ctx.In
+	cmd.Stdout = ctx.Out
+	cmd.Stderr = ctx.ErrOut
+	return cmd.Run()
 }
 
 type Pipeline struct {

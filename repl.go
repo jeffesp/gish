@@ -78,10 +78,13 @@ func runRawREPL(ctx *ExecCtx) {
 	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
 
 	termCtx := &ExecCtx{
-		In:          in,
-		Out:         t,
-		ErrOut:      t,
-		RestoreTerm: func() { term.Restore(fd, origState) },
+		In:     in,
+		Out:    t,
+		ErrOut: t,
+		RestoreTerm: func() func() {
+			term.Restore(fd, origState)
+			return func() { term.MakeRaw(fd) } //nolint:errcheck
+		},
 		RunCmd: func(cmd *exec.Cmd) error {
 			cmd.Stdin = ctx.In
 			cmd.Stdout = ctx.Out

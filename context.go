@@ -10,5 +10,5 @@ type ExecCtx struct {
 	Out         io.Writer
 	ErrOut      io.Writer
 	RunCmd      func(*exec.Cmd) error // terminal restore/raw mode callback
-	RestoreTerm func()                // restore terminal before process replacement (exec)
+	RestoreTerm func() func()         // restore terminal; returns function to re-enter raw mode
 }

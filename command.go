@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 )
 
@@ -61,9 +63,41 @@ type Pipeline struct {
 }
 
 func (p *Pipeline) Exec(ctx *ExecCtx) error {
-	// todo: create len(Stages)-1 os.Pipe()s, wire output of prev to input of next,
-	// somehow make them call Start for the commands, then do something to handle
-	// everything finishing (or erroring)
+	if ctx.RestoreTerm != nil {
+		termRaw := ctx.RestoreTerm()
+		defer termRaw()
+	}
 
-	return fmt.Errorf("pipelines not yet implemented")
+	waits := make([]func() error, len(p.Stages))
+	var nextIn io.Reader = ctx.In
+	for i, stage := range p.Stages {
+		localCtx := &ExecCtx{
+			In:     nextIn,
+			ErrOut: ctx.ErrOut,
+		}
+		if i == len(p.Stages)-1 {
+			localCtx.Out = ctx.Out
+			waits[i] = stage.Start(localCtx)
+		} else {
+			pr, pw, err := os.Pipe()
+			if err != nil {
+				return fmt.Errorf("unable to create pipe: %v", err)
+			}
+			localCtx.Out = pw
+			nextIn = pr
+			wait := stage.Start(localCtx)
+			waits[i] = func() error {
+				err := wait()
+				pw.Close()
+				return err
+			}
+		}
+	}
+
+	err := make([]error, len(waits))
+	for i, fun := range waits {
+		err[i] = fun()
+	}
+
+	return err[len(waits)]
 }

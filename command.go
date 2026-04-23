@@ -36,12 +36,18 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 		go func() { done <- fn(c, ctx) }()
 		return func() error { return <-done }
 	}
+
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
+	clearCmd := SetCurrentCmd(cmd)
+
 	cmd.Stdin = ctx.In
 	cmd.Stdout = ctx.Out
 	cmd.Stderr = ctx.ErrOut
 	cmd.Start()
-	return cmd.Wait
+	return func() error {
+		defer clearCmd()
+		return cmd.Wait()
+	}
 }
 
 func (c *Command) Exec(ctx *ExecCtx) error {
@@ -49,6 +55,9 @@ func (c *Command) Exec(ctx *ExecCtx) error {
 		return fn(c, ctx)
 	}
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
+	clearCmd := SetCurrentCmd(cmd)
+	defer clearCmd()
+
 	if ctx.RunCmd != nil {
 		return ctx.RunCmd(cmd)
 	}
@@ -99,5 +108,5 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 		err[i] = fun()
 	}
 
-	return err[len(waits)]
+	return err[len(waits)-1]
 }

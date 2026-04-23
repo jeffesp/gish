@@ -19,6 +19,7 @@ func TestTokenize(t *testing.T) {
 		{"echo unclosed'quote", nil, nil, true},
 		{"foo'bar'", []string{"foobar"}, []TokenKind{TokenWord}, false},
 		{"cat file.out | grep foo", []string{"cat", "file.out", "|", "grep", "foo"}, []TokenKind{TokenWord, TokenWord, TokenPipe, TokenWord, TokenWord}, false},
+		{"cat file.out|grep foo", []string{"cat", "file.out", "|", "grep", "foo"}, []TokenKind{TokenWord, TokenWord, TokenPipe, TokenWord, TokenWord}, false},
 	}
 	for _, c := range cases {
 		toks, err := tokenize(c.input)

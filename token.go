@@ -66,6 +66,11 @@ func tokenize(line string) ([]Token, error) {
 				curKind = TokenWord
 			}
 		case !inQuote && ch == '|':
+			if cur.Len() > 0 {
+				tokens = append(tokens, Token{curKind, cur.String()})
+				cur.Reset()
+				curKind = TokenWord
+			}
 			tokens = append(tokens, Token{TokenPipe, string(ch)})
 		default:
 			if !inQuote {

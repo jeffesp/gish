@@ -43,7 +43,10 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 	cmd.Stdin = ctx.In
 	cmd.Stdout = ctx.Out
 	cmd.Stderr = ctx.ErrOut
-	cmd.Start()
+	if err := cmd.Start(); err != nil {
+		clearCmd()
+		return func() error { return err }
+	}
 	return func() error {
 		defer clearCmd()
 		return cmd.Wait()

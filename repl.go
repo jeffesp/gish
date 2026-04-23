@@ -51,7 +51,7 @@ func execLine(line string, ctx *ExecCtx) {
 	code := 0
 
 	if err := exe.Exec(ctx); err != nil {
-		fmt.Fprintf(ctx.ErrOut, " %v\n", err)
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		code = exitCode(err)
 	}
 

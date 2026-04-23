@@ -11,20 +11,19 @@ import (
 )
 
 var (
-	activeCmd   *exec.Cmd
+	activeCmds  = make(map[*exec.Cmd]struct{})
 	activeCmdMu sync.Mutex
 )
 
-func SetCurrentCmd(cmd *exec.Cmd) {
+func SetCurrentCmd(cmd *exec.Cmd) func() {
 	activeCmdMu.Lock()
-	activeCmd = cmd
+	activeCmds[cmd] = struct{}{}
 	activeCmdMu.Unlock()
-}
-
-func ClearCurrentCmd() {
-	activeCmdMu.Lock()
-	activeCmd = nil
-	activeCmdMu.Unlock()
+	return func() {
+		activeCmdMu.Lock()
+		delete(activeCmds, cmd)
+		activeCmdMu.Unlock()
+	}
 }
 
 func SetupSignals(out io.Writer) {
@@ -36,11 +35,12 @@ func SetupSignals(out io.Writer) {
 			switch sig {
 			case os.Interrupt:
 				activeCmdMu.Lock()
-				cmd := activeCmd
-				activeCmdMu.Unlock()
-				if cmd != nil && cmd.Process != nil {
-					cmd.Process.Signal(os.Interrupt)
+				for cmd := range activeCmds {
+					if cmd != nil && cmd.Process != nil {
+						cmd.Process.Signal(os.Interrupt)
+					}
 				}
+				activeCmdMu.Unlock()
 			case syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGHUP:
 				fmt.Fprintln(out)
 				os.Exit(0)

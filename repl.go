@@ -27,61 +27,7 @@ func RunREPL(ctx *ExecCtx) {
 	runScannerREPL(ctx)
 }
 
-func tokenize(line string) ([]Token, error) {
-	var tokens []Token
-	var cur strings.Builder
-	inQuote := false
-	quoteChar := byte(0)
-	curKind := TokenWord
-
-	for i := 0; i < len(line); i++ {
-		ch := line[i]
-		switch {
-		case !inQuote && (ch == '\'' || ch == '"'):
-			if cur.Len() == 0 {
-				if ch == '\'' {
-					curKind = TokenSingleQuoted
-				} else {
-					curKind = TokenDoubleQuoted
-				}
-			} else {
-				curKind = TokenWord
-			}
-			inQuote = true
-			quoteChar = ch
-		case inQuote && ch == quoteChar:
-			inQuote = false
-		case !inQuote && (ch == ' ' || ch == '\t'):
-			if cur.Len() > 0 {
-				tokens = append(tokens, Token{curKind, cur.String()})
-				cur.Reset()
-				curKind = TokenWord
-			}
-		default:
-			if !inQuote {
-				curKind = TokenWord
-			}
-			cur.WriteByte(ch)
-		}
-	}
-	if inQuote {
-		return nil, fmt.Errorf("unclosed quote")
-	}
-	if cur.Len() > 0 {
-		tokens = append(tokens, Token{curKind, cur.String()})
-	}
-	return tokens, nil
-}
-
-func tokenValues(tokens []Token) []string {
-	vals := make([]string, len(tokens))
-	for i, t := range tokens {
-		vals[i] = t.Value
-	}
-	return vals
-}
-
-func execLine(line string, ctx *ExecCtx, runCmd func(*exec.Cmd) error) {
+func execLine(line string, ctx *ExecCtx) {
 	if expanded, ok := expandHistory(line); ok {
 		fmt.Fprintln(ctx.Out, expanded)
 		line = expanded
@@ -89,34 +35,28 @@ func execLine(line string, ctx *ExecCtx, runCmd func(*exec.Cmd) error) {
 
 	tokens, err := tokenize(line)
 	if err != nil {
-		fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
 	}
 	tokens = expandTokens(tokens)
-	ctx.Line = line
-	ctx.Tokens = tokens
+
+	exe, err := parseTokens(tokens, line)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return
+	}
 
 	dir, _ := os.Getwd()
 	start := time.Now()
 	code := 0
 
-	if fn, ok := Builtins[ctx.Name()]; ok {
-		if err := fn(ctx); err != nil {
-			fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
-			code = 1
-		}
-	} else {
-		cmd := exec.Command(ctx.Name(), tokenValues(ctx.Args())...)
-		SetCurrentCmd(cmd)
-		if err := runCmd(cmd); err != nil {
-			fmt.Fprintf(ctx.ErrOut, "error: %v\n", err)
-			code = exitCode(err)
-		}
-		ClearCurrentCmd()
+	if err := exe.Exec(ctx); err != nil {
+		fmt.Fprintf(ctx.ErrOut, " %v\n", err)
+		code = exitCode(err)
 	}
 
 	appendHistory(HistoryEntry{
-		Command:   ctx.Line,
+		Command:   line,
 		Dir:       dir,
 		ExitCode:  code,
 		StartTime: start,
@@ -130,12 +70,30 @@ func runRawREPL(ctx *ExecCtx) {
 	fd := int(in.Fd())
 	origState, err := term.MakeRaw(fd)
 	if err != nil {
-		runScannerREPL(ctx)
-		return
+		fmt.Fprintf(os.Stderr, "gish: failed to set raw mode: %v\n", err)
+		os.Exit(1)
 	}
 	defer term.Restore(fd, origState)
 
 	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
+
+	termCtx := &ExecCtx{
+		In:     in,
+		Out:    t,
+		ErrOut: t,
+		RestoreTerm: func() func() {
+			term.Restore(fd, origState)
+			return func() { term.MakeRaw(fd) } //nolint:errcheck
+		},
+		RunCmd: func(cmd *exec.Cmd) error {
+			cmd.Stdin = ctx.In
+			cmd.Stdout = ctx.Out
+			cmd.Stderr = ctx.ErrOut
+			term.Restore(fd, origState)
+			err := cmd.Run()
+			term.MakeRaw(fd) //nolint:errcheck
+			return err
+		}}
 
 	if w, h, err := term.GetSize(fd); err == nil {
 		t.SetSize(w, h)
@@ -155,7 +113,6 @@ func runRawREPL(ctx *ExecCtx) {
 
 	t.History = newTermHistory()
 
-	termCtx := &ExecCtx{In: in, Out: t, ErrOut: t}
 	InitScripting(termCtx)
 
 	for {
@@ -165,20 +122,18 @@ func runRawREPL(ctx *ExecCtx) {
 		}
 
 		if line = strings.TrimSpace(line); line != "" {
-			execLine(line, termCtx, func(cmd *exec.Cmd) error {
-				cmd.Stdin = in
-				cmd.Stdout = ctx.Out
-				cmd.Stderr = ctx.ErrOut
-				term.Restore(fd, origState)
-				err := cmd.Run()
-				term.MakeRaw(fd) //nolint:errcheck
-				return err
-			})
+			execLine(line, termCtx)
 		}
 	}
 }
 
 func runScannerREPL(ctx *ExecCtx) {
+	ctx.RunCmd = func(cmd *exec.Cmd) error {
+		cmd.Stdin = ctx.In
+		cmd.Stdout = ctx.Out
+		cmd.Stderr = ctx.ErrOut
+		return cmd.Run()
+	}
 	InitScripting(ctx)
 	scanner := bufio.NewScanner(ctx.In)
 	for {
@@ -188,12 +143,7 @@ func runScannerREPL(ctx *ExecCtx) {
 		}
 
 		if line := strings.TrimSpace(scanner.Text()); line != "" {
-			execLine(line, ctx, func(cmd *exec.Cmd) error {
-				cmd.Stdin = ctx.In
-				cmd.Stdout = ctx.Out
-				cmd.Stderr = ctx.ErrOut
-				return cmd.Run()
-			})
+			execLine(line, ctx)
 		}
 
 	}

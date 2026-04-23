@@ -182,7 +182,7 @@ func TestBuiltinHistoryNoArgs(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := builtinHistory(testCtx([]Token{}, &buf)); err != nil {
+	if err := builtinHistory(testCmd([]Token{}), testCtx(&buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	out := buf.String()
@@ -214,7 +214,7 @@ func TestBuiltinHistoryWithLimit(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := builtinHistory(testCtx([]Token{{TokenWord, "3"}}, &buf)); err != nil {
+	if err := builtinHistory(testCmd([]Token{{TokenWord, "3"}}), testCtx(&buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -248,7 +248,7 @@ func TestBuiltinHistorySince(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCtx([]Token{{TokenWord, "--since"}, {TokenWord, "2026-04-01"}}, &buf))
+	err := builtinHistory(testCmd([]Token{{TokenWord, "--since"}, {TokenWord, "2026-04-01"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestBuiltinHistoryUntil(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCtx([]Token{{TokenWord, "--until"}, {TokenWord, "2026-03-01"}}, &buf))
+	err := builtinHistory(testCmd([]Token{{TokenWord, "--until"}, {TokenWord, "2026-03-01"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestBuiltinHistoryOkAndFail(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCtx([]Token{{TokenWord, "--ok"}}, &buf))
+	err := builtinHistory(testCmd([]Token{{TokenWord, "--ok"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("--ok: unexpected error: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestBuiltinHistoryOkAndFail(t *testing.T) {
 	}
 
 	buf.Reset()
-	err = builtinHistory(testCtx([]Token{{TokenWord, "--fail"}}, &buf))
+	err = builtinHistory(testCmd([]Token{{TokenWord, "--fail"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("--fail: unexpected error: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestBuiltinHistoryOkFailMutuallyExclusive(t *testing.T) {
 	defer cleanup()
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCtx([]Token{{TokenWord, "--ok"}, {TokenWord, "--fail"}}, &buf))
+	err := builtinHistory(testCmd([]Token{{TokenWord, "--ok"}, {TokenWord, "--fail"}}), testCtx(&buf))
 	if err == nil {
 		t.Error("expected error for --ok --fail together")
 	}
@@ -363,7 +363,7 @@ func TestBuiltinHistoryDirFilter(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCtx([]Token{{TokenWord, "--dir"}, {TokenWord, "gish"}}, &buf))
+	err := builtinHistory(testCmd([]Token{{TokenWord, "--dir"}, {TokenWord, "gish"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestBuiltinHistoryCombinedFilters(t *testing.T) {
 		{TokenWord, "--fail"},
 		{TokenWord, "--dir"}, {TokenWord, "/project"},
 	}
-	err := builtinHistory(testCtx(args, &buf))
+	err := builtinHistory(testCmd(args), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestBuiltinHistoryBadArgs(t *testing.T) {
 
 	for _, c := range cases {
 		buf.Reset()
-		if err := builtinHistory(testCtx(c.args, &buf)); err == nil {
+		if err := builtinHistory(testCmd(c.args), testCtx(&buf)); err == nil {
 			t.Errorf("%s: expected error", c.name)
 		}
 	}

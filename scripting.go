@@ -36,11 +36,11 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		if !ok {
 			panic(vm.NewTypeError("second argument must be a function"))
 		}
-		RegisterBuiltin(name, func(bCtx *ExecCtx) error {
+		RegisterBuiltin(name, func(bCmd *Command, bCtx *ExecCtx) error {
 			jsCtx := vm.NewObject()
-			jsCtx.Set("line", bCtx.Line)
-			jsCtx.Set("name", bCtx.Name())
-			jsCtx.Set("args", tokenValues(bCtx.Args()))
+			jsCtx.Set("line", bCmd.Line)
+			jsCtx.Set("name", bCmd.Name())
+			jsCtx.Set("args", tokenValues(bCmd.Args()))
 
 			val, err := callSafe(cb, goja.Undefined(), jsCtx)
 			if err != nil {
@@ -199,8 +199,8 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	vm.Set("gish", gishObj)
 }
 
-func builtinJS(ctx *ExecCtx) error {
-	args := ctx.Args()
+func builtinJS(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
 	if len(args) == 0 {
 		return fmt.Errorf("usage: js <expression>")
 	}

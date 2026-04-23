@@ -50,7 +50,7 @@ On each file execution we save the following pieces of information:
 - start time
 - end time
 - session id
- 
+
 I think most of these are self-explanatory. Session id is just the PID of the current shell.
 
 ### Querying History
@@ -61,14 +61,14 @@ All flags are optional and combinable.
 history [N] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `N` | Show last N results (after all other filters applied) |
-| `--since DATE` | Only entries with StartTime >= DATE |
-| `--until DATE` | Only entries with StartTime <= DATE |
-| `--ok` | Only entries with ExitCode == 0 |
-| `--fail` | Only entries with ExitCode != 0 |
-| `--dir PATH` | Only entries where Dir contains PATH as a substring |
+| Flag           | Meaning                                               |
+| -------------- | ----------------------------------------------------- |
+| `N`            | Show last N results (after all other filters applied) |
+| `--since DATE` | Only entries with StartTime >= DATE                   |
+| `--until DATE` | Only entries with StartTime <= DATE                   |
+| `--ok`         | Only entries with ExitCode == 0                       |
+| `--fail`       | Only entries with ExitCode != 0                       |
+| `--dir PATH`   | Only entries where Dir contains PATH as a substring   |
 
 `DATE` format: `YYYY-MM-DD` (parsed as local midnight). `--ok` and `--fail` are mutually exclusive.
 
@@ -93,10 +93,10 @@ Scripts have access to a global `gish` object:
 
 ```javascript
 // Register a shell command
-gish.register("name", function(ctx) {
-    // ctx.line  — raw input string
-    // ctx.name  — command name
-    // ctx.args  — array of argument strings
+gish.register("name", function (ctx) {
+  // ctx.line  — raw input string
+  // ctx.name  — command name
+  // ctx.args  — array of argument strings
 });
 
 // Run an external command and capture its output
@@ -104,28 +104,28 @@ var r = gish.exec("git", ["status", "--short"]);
 // r.stdout, r.stderr, r.exitCode
 
 // Stream command output line-by-line
-var r = gish.spawn("ls", ["-al"], function(line) {
-    gish.println(">> " + line);
+var r = gish.spawn("ls", ["-al"], function (line) {
+  gish.println(">> " + line);
 });
 // r.stderr, r.exitCode (stdout is consumed by the callback and given to the callback line-by-line)
 
 // Environment variables
-gish.env.get("HOME")
-gish.env.set("KEY", "val")
-gish.env.unset("KEY")
-gish.env.all()  // returns {KEY: "val", ...}
+gish.env.get("HOME");
+gish.env.set("KEY", "val");
+gish.env.unset("KEY");
+gish.env.all(); // returns {KEY: "val", ...}
 
 // Current working directory
-gish.cwd()
+gish.cwd();
 
 // Output
-gish.print("no newline")
-gish.println("with newline")
+gish.print("no newline");
+gish.println("with newline");
 
 // JSON helpers
-gish.parseJSON(str)        // parse with shell-friendly error messages
-gish.toJSON(obj)           // pretty-print (2-space indent)
-gish.toJSON(obj, false)    // compact
+gish.parseJSON(str); // parse with shell-friendly error messages
+gish.toJSON(obj); // pretty-print (2-space indent)
+gish.toJSON(obj, false); // compact
 ```
 
 ### Example: Git Helpers
@@ -135,49 +135,51 @@ Save this as `~/.config/gish/scripts/01-git-helpers.js`:
 ```javascript
 // Helper: run a command and return trimmed stdout
 function run(cmd, args) {
-    var r = gish.exec(cmd, args);
-    if (r.exitCode !== 0) {
-        throw new Error(cmd + " failed: " + r.stderr.trim());
-    }
-    return r.stdout.trim();
+  var r = gish.exec(cmd, args);
+  if (r.exitCode !== 0) {
+    throw new Error(cmd + " failed: " + r.stderr.trim());
+  }
+  return r.stdout.trim();
 }
 
 // Helper: parse lines into array, filtering empties
 function lines(str) {
-    return str.split("\n").filter(function(l) { return l.length > 0; });
+  return str.split("\n").filter(function (l) {
+    return l.length > 0;
+  });
 }
 
 // "gs" — compact git status with file count
-gish.register("gs", function(ctx) {
-    var status = run("git", ["status", "--short"]);
-    if (status.length === 0) {
-        gish.println("clean");
-        return;
-    }
-    var files = lines(status);
-    gish.println(files.length + " changed file(s):");
-    files.forEach(function(f) {
-        gish.println("  " + f);
-    });
+gish.register("gs", function (ctx) {
+  var status = run("git", ["status", "--short"]);
+  if (status.length === 0) {
+    gish.println("clean");
+    return;
+  }
+  var files = lines(status);
+  gish.println(files.length + " changed file(s):");
+  files.forEach(function (f) {
+    gish.println(f);
+  });
 });
 
 // "gb" — list branches with current branch highlighted
-gish.register("gb", function(ctx) {
-    var output = run("git", ["branch", "--no-color"]);
-    lines(output).forEach(function(b) {
-        if (b.indexOf("*") === 0) {
-            gish.println(">> " + b.substring(2));
-        } else {
-            gish.println("   " + b.trim());
-        }
-    });
+gish.register("gb", function (ctx) {
+  var output = run("git", ["branch", "--no-color"]);
+  lines(output).forEach(function (b) {
+    if (b.indexOf("*") === 0) {
+      gish.println(">> " + b.substring(2));
+    } else {
+      gish.println("   " + b.trim());
+    }
+  });
 });
 
 // "gl" — git log with optional count (default 5)
-gish.register("gl", function(ctx) {
-    var n = (ctx.args.length > 0) ? ctx.args[0] : "5";
-    var log = run("git", ["log", "--oneline", "-" + n]);
-    gish.println(log);
+gish.register("gl", function (ctx) {
+  var n = ctx.args.length > 0 ? ctx.args[0] : "5";
+  var log = run("git", ["log", "--oneline", "-" + n]);
+  gish.println(log);
 });
 ```
 
@@ -197,4 +199,3 @@ d517494 Don't exit on signals
 5e47c92 add exec context
 1725224 add history implementation
 ```
-

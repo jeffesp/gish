@@ -156,6 +156,9 @@ func (h *termHistory) Len() int {
 
 // At returns the entry at index idx, where 0 is the most recent.
 func (h *termHistory) At(idx int) string {
+	if len(h.entries) < idx {
+		return ""
+	}
 	return h.entries[len(h.entries)-1-idx]
 }
 

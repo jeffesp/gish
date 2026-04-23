@@ -5,7 +5,11 @@ This is a shell written in Go. A 'go-ish' shell. It is not compatible with other
 It is built only for my use, and I do not have particularly complex requirements. At least in some respects. My day-to-day at the
 command prompt is pretty simple. I only use a few keyboard shortcuts to navigate the input, and only do very basic stuff. But I also
 want to have more capability for scripting with a real language, which is the motive for this project. I want to use JS for that, and
-add support for structured pipelines. It is not there yet.
+add support for structured pipelines.
+
+## Status
+
+This is nowhere near a real shell yet. BUT, I will be adding globs and tab-completion next, and I think with those it will be my daily driver.
 
 ## Builtins
 

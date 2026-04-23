@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -24,6 +25,7 @@ func init() {
 	RegisterBuiltin("echo", builtinEcho)
 	RegisterBuiltin("cd", builtinCd)
 	RegisterBuiltin("exec", builtinExec)
+	RegisterBuiltin("exit", builtinExit)
 }
 
 func builtinSet(cmd *Command, ctx *ExecCtx) error {
@@ -88,5 +90,20 @@ func builtinExec(cmd *Command, ctx *ExecCtx) error {
 
 func builtinEcho(cmd *Command, ctx *ExecCtx) error {
 	fmt.Fprintln(ctx.Out, strings.Join(tokenValues(cmd.Args()), " "))
+	return nil
+}
+
+func builtinExit(cmd *Command, _ctx *ExecCtx) error {
+	if len(cmd.Args()) > 1 {
+		return fmt.Errorf("usage: exit [int]")
+	}
+	if len(cmd.Args()) == 1 {
+		code, e := strconv.Atoi(cmd.Args()[0].Value)
+		if e != nil {
+			return e
+		}
+		os.Exit(code)
+	}
+	os.Exit(0)
 	return nil
 }

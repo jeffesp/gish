@@ -77,6 +77,11 @@ func TestExpandTokens(t *testing.T) {
 }
 
 func TestGlobTokens(t *testing.T) {
+	temp := os.TempDir()
+	os.Chdir(temp)
+	defer os.RemoveAll(temp)
+	os.Create("README.md")
+	os.Create("TODO.md")
 
 	cases := []struct {
 		name  string
@@ -97,10 +102,4 @@ func TestGlobTokens(t *testing.T) {
 			}
 		})
 	}
-
-	// - Test that a glob pattern expands to matching files
-	// - Test that single-quoted globs are not expanded
-	// - Test that double-quoted globs are not expanded
-	// - Test that a non-matching glob passes through unchanged
-	// - Use a temp directory with known files for deterministic tests
 }

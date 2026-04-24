@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,10 +28,33 @@ func expandToken(t Token) Token {
 	return Token{Kind: t.Kind, Value: os.ExpandEnv(t.Value)}
 }
 
-func expandTokens(tokens []Token) []Token {
+func expandVars(tokens []Token) []Token {
 	out := make([]Token, len(tokens))
 	for i, t := range tokens {
 		out[i] = expandToken(t)
+	}
+	return out
+}
+
+func expandGlobs(tokens []Token) []Token {
+	var out []Token
+	for _, t := range tokens {
+		if t.Kind == TokenWord {
+			res, err := filepath.Glob(t.Value)
+			if err != nil || len(res) == 0 {
+				out = append(out, t)
+				continue
+			}
+
+			newTokens := make([]Token, len(res))
+			for j, val := range res {
+				newTokens[j] = Token{Kind: TokenWord, Value: val}
+			}
+			out = append(out, newTokens...)
+		} else {
+			out = append(out, t)
+		}
+
 	}
 	return out
 }

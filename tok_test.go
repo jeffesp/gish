@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -70,6 +71,34 @@ func TestExpandTokens(t *testing.T) {
 			got := expandToken(c.input)
 			if got.Value != c.want {
 				t.Errorf("expandToken(%v): got %q want %q", c.input, got.Value, c.want)
+			}
+		})
+	}
+}
+
+func TestGlobTokens(t *testing.T) {
+	temp := os.TempDir()
+	os.Chdir(temp)
+	defer os.RemoveAll(temp)
+	os.Create("README.md")
+	os.Create("TODO.md")
+
+	cases := []struct {
+		name  string
+		input []Token
+		want  []Token
+	}{
+		{"matches files", []Token{{TokenWord, "*.md"}}, []Token{{TokenWord, "README.md"}, {TokenWord, "TODO.md"}}},
+		{"single quote string does not glob", []Token{{TokenSingleQuoted, "'*.md'"}}, []Token{{TokenSingleQuoted, "'*.md'"}}},
+		{"double quote string does not glob", []Token{{TokenDoubleQuoted, "\"*.md\""}}, []Token{{TokenDoubleQuoted, "\"*.md\""}}},
+		{"not matching does not glob", []Token{{TokenWord, "*.xyz"}}, []Token{{TokenWord, "*.xyz"}}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := expandGlobs(c.input)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
 			}
 		})
 	}

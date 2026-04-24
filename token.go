@@ -107,7 +107,7 @@ func parseTokens(tokens []Token, line string) (Executable, error) {
 		return &Command{Tokens: tokens, Line: line}, nil
 	}
 
-	// make sure pipe are in valid places
+	// make sure pipes are in valid places
 	if tokens[0].Kind == TokenPipe {
 		return nil, fmt.Errorf("|: cannot start with a pipe")
 	}

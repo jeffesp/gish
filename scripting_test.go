@@ -392,26 +392,25 @@ func TestGishToJSON(t *testing.T) {
 	}
 }
 
-func TestLoadScripts(t *testing.T) {
+func TestLoadInitScript(t *testing.T) {
 	buf, _ := initTestVM(t)
 
 	dir := t.TempDir()
-	t.Setenv("GISH_SCRIPTS_DIR", dir)
+	t.Setenv("GISH_CONFIG_DIR", dir)
 
-	// Write a script that registers a command
-	os.WriteFile(filepath.Join(dir, "01-hello.js"), []byte(`
+	// Write an init.js that registers a command
+	os.WriteFile(filepath.Join(dir, "init.js"), []byte(`
 		gish.register("jshello", function(ctx) {
 			gish.println("js says hello");
 		});
 	`), 0644)
 
-	// Re-load scripts
 	buf.Reset()
-	loadScripts(jsVM, &ExecCtx{In: strings.NewReader(""), Out: buf, ErrOut: buf})
+	loadInitScript(jsVM, &ExecCtx{In: strings.NewReader(""), Out: buf, ErrOut: buf})
 
 	fn, ok := Builtins["jshello"]
 	if !ok {
-		t.Fatal("jshello not registered after loadScripts")
+		t.Fatal("jshello not registered after loadInitScript")
 	}
 
 	buf.Reset()
@@ -432,53 +431,53 @@ func TestLoadScripts(t *testing.T) {
 	delete(Builtins, "jshello")
 }
 
-func TestLoadScriptsSyntaxError(t *testing.T) {
+func TestLoadInitScriptSyntaxError(t *testing.T) {
 	initTestVM(t)
 
 	dir := t.TempDir()
-	t.Setenv("GISH_SCRIPTS_DIR", dir)
+	t.Setenv("GISH_CONFIG_DIR", dir)
 
-	os.WriteFile(filepath.Join(dir, "bad.js"), []byte(`function(`), 0644)
-	os.WriteFile(filepath.Join(dir, "good.js"), []byte(`gish.register("goodcmd", function() {})`), 0644)
+	os.WriteFile(filepath.Join(dir, "init.js"), []byte(`function(`), 0644)
 
 	var errBuf bytes.Buffer
 	ctx := &ExecCtx{In: strings.NewReader(""), Out: &errBuf, ErrOut: &errBuf}
-	loadScripts(jsVM, ctx)
+	loadInitScript(jsVM, ctx)
 
-	// Bad script should produce error output
-	if !strings.Contains(errBuf.String(), "bad.js") {
-		t.Errorf("expected error for bad.js, got %q", errBuf.String())
+	if !strings.Contains(errBuf.String(), "init.js") {
+		t.Errorf("expected error mentioning init.js, got %q", errBuf.String())
 	}
-
-	// Good script should still load
-	if _, ok := Builtins["goodcmd"]; !ok {
-		t.Error("goodcmd not registered — good script didn't load after bad one")
-	}
-
-	delete(Builtins, "goodcmd")
 }
 
-func TestLoadScriptsMissingDir(t *testing.T) {
+func TestLoadInitScriptMissing(t *testing.T) {
 	initTestVM(t)
-	t.Setenv("GISH_SCRIPTS_DIR", "/nonexistent/gish/scripts/path")
+	t.Setenv("GISH_CONFIG_DIR", "/nonexistent/gish/config/path")
 
-	// Should not panic or error
+	// Should not panic or error when init.js doesn't exist
 	var buf bytes.Buffer
 	ctx := &ExecCtx{In: strings.NewReader(""), Out: &buf, ErrOut: &buf}
-	loadScripts(jsVM, ctx)
+	loadInitScript(jsVM, ctx)
 }
 
-func TestScriptsDir(t *testing.T) {
-	// With env var set
-	t.Setenv("GISH_SCRIPTS_DIR", "/custom/scripts")
-	if got := scriptsDir(); got != "/custom/scripts" {
-		t.Errorf("got %q want /custom/scripts", got)
+func TestConfigDir(t *testing.T) {
+	// GISH_CONFIG_DIR takes priority
+	t.Setenv("GISH_CONFIG_DIR", "/custom/config")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if got := configDir(); got != "/custom/config" {
+		t.Errorf("got %q want /custom/config", got)
 	}
 
-	// Without env var
-	t.Setenv("GISH_SCRIPTS_DIR", "")
-	dir := scriptsDir()
-	if !strings.HasSuffix(dir, filepath.Join(".config", "gish", "scripts")) {
-		t.Errorf("got %q, expected suffix .config/gish/scripts", dir)
+	// XDG_CONFIG_HOME is next
+	t.Setenv("GISH_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "/xdg/config")
+	if got := configDir(); got != filepath.Join("/xdg/config", "gish") {
+		t.Errorf("got %q want /xdg/config/gish", got)
+	}
+
+	// Falls back to ~/.config/gish
+	t.Setenv("GISH_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	dir := configDir()
+	if !strings.HasSuffix(dir, filepath.Join(".config", "gish")) {
+		t.Errorf("got %q, expected suffix .config/gish", dir)
 	}
 }

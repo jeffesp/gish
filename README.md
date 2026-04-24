@@ -78,7 +78,7 @@ history [N] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
 
 ## Scripting
 
-`gish` embeds a JavaScript runtime ([goja](https://github.com/dop251/goja)) so you can define custom commands in `.js` files. Scripts are loaded from `$GISH_SCRIPTS_DIR` or `~/.config/gish/scripts/` at startup. Files are loaded in alphabetical order — prefix with `01-`, `02-`, etc. to control ordering.
+`gish` embeds a JavaScript runtime ([goja](https://github.com/dop251/goja)) so you can define custom commands in JS. At startup, gish loads `init.js` from its config directory. The config directory is resolved in order: `$GISH_CONFIG_DIR`, `$XDG_CONFIG_HOME/gish`, or `~/.config/gish`.
 
 ### Inline JS
 
@@ -134,7 +134,7 @@ gish.toJSON(obj, false); // compact
 
 ### Example: Git Helpers
 
-Save this as `~/.config/gish/scripts/01-git-helpers.js`:
+Save this in `~/.config/gish/init.js` (or source it from init.js):
 
 ```javascript
 // Helper: run a command and return trimmed stdout

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -23,7 +22,7 @@ func InitScripting(ctx *ExecCtx) {
 
 	setupAPI(jsVM, ctx)
 	RegisterBuiltin("js", builtinJS)
-	loadScripts(jsVM, ctx)
+	loadInitScript(jsVM, ctx)
 }
 
 func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
@@ -226,42 +225,37 @@ func builtinJS(cmd *Command, ctx *ExecCtx) error {
 	return nil
 }
 
-func scriptsDir() string {
-	if d := os.Getenv("GISH_SCRIPTS_DIR"); d != "" {
+func configDir() string {
+	if d := os.Getenv("GISH_CONFIG_DIR"); d != "" {
 		return d
+	}
+	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
+		return filepath.Join(d, "gish")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "gish", "scripts")
+	return filepath.Join(home, ".config", "gish")
 }
 
-func loadScripts(vm *goja.Runtime, ctx *ExecCtx) {
-	dir := scriptsDir()
+func loadInitScript(vm *goja.Runtime, ctx *ExecCtx) {
+	dir := configDir()
 	if dir == "" {
 		return
 	}
-	entries, err := filepath.Glob(filepath.Join(dir, "*.js"))
-	if err != nil || len(entries) == 0 {
+	path := filepath.Join(dir, "init.js")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return // missing init.js is fine
+	}
+	prg, err := goja.Compile("init.js", string(src), false)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "gish: init.js: %v\n", err)
 		return
 	}
-	sort.Strings(entries)
-
-	for _, path := range entries {
-		src, err := os.ReadFile(path)
-		if err != nil {
-			fmt.Fprintf(ctx.ErrOut, "gish: script %s: %v\n", filepath.Base(path), err)
-			continue
-		}
-		prg, err := goja.Compile(filepath.Base(path), string(src), false)
-		if err != nil {
-			fmt.Fprintf(ctx.ErrOut, "gish: script %s: %v\n", filepath.Base(path), err)
-			continue
-		}
-		if _, err := vm.RunProgram(prg); err != nil {
-			fmt.Fprintf(ctx.ErrOut, "gish: script %s: %v\n", filepath.Base(path), err)
-		}
+	if _, err := vm.RunProgram(prg); err != nil {
+		fmt.Fprintf(ctx.ErrOut, "gish: init.js: %v\n", err)
 	}
 }
 

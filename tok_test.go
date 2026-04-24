@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -73,4 +74,33 @@ func TestExpandTokens(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGlobTokens(t *testing.T) {
+
+	cases := []struct {
+		name  string
+		input []Token
+		want  []Token
+	}{
+		{"matches files", []Token{{TokenWord, "*.md"}}, []Token{{TokenWord, "README.md"}, {TokenWord, "TODO.md"}}},
+		{"single quote string does not glob", []Token{{TokenSingleQuoted, "'*.md'"}}, []Token{{TokenSingleQuoted, "'*.md'"}}},
+		{"double quote string does not glob", []Token{{TokenDoubleQuoted, "\"*.md\""}}, []Token{{TokenDoubleQuoted, "\"*.md\""}}},
+		{"not matching does not glob", []Token{{TokenWord, "*.xyz"}}, []Token{{TokenWord, "*.xyz"}}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := expandGlobs(c.input)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+
+	// - Test that a glob pattern expands to matching files
+	// - Test that single-quoted globs are not expanded
+	// - Test that double-quoted globs are not expanded
+	// - Test that a non-matching glob passes through unchanged
+	// - Use a temp directory with known files for deterministic tests
 }

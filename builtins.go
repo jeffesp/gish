@@ -26,6 +26,7 @@ func init() {
 	RegisterBuiltin("cd", builtinCd)
 	RegisterBuiltin("exec", builtinExec)
 	RegisterBuiltin("exit", builtinExit)
+	RegisterBuiltin("title", builtinTitle)
 }
 
 func builtinSet(cmd *Command, ctx *ExecCtx) error {
@@ -90,6 +91,16 @@ func builtinExec(cmd *Command, ctx *ExecCtx) error {
 
 func builtinEcho(cmd *Command, ctx *ExecCtx) error {
 	fmt.Fprintln(ctx.Out, strings.Join(tokenValues(cmd.Args()), " "))
+	return nil
+}
+
+func builtinTitle(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
+	if len(args) == 0 {
+		return fmt.Errorf("usage: title TEXT...")
+	}
+	title := strings.Join(tokenValues(args), " ")
+	fmt.Fprintf(ctx.Out, "\033]0;%s\007", title)
 	return nil
 }
 

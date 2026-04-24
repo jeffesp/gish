@@ -157,6 +157,13 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	})
 	gishObj.Set("env", envObj)
 
+	// gish.title(str)
+	gishObj.Set("title", func(call goja.FunctionCall) goja.Value {
+		title := call.Argument(0).String()
+		fmt.Fprintf(ctx.Out, "\033]0;%s\007", title)
+		return goja.Undefined()
+	})
+
 	// gish.cwd()
 	gishObj.Set("cwd", func(call goja.FunctionCall) goja.Value {
 		dir, err := os.Getwd()

@@ -19,14 +19,6 @@ contract: single commands use one path, pipelines use another. A unified approac
 
 ## Missing Features (acknowledged in README/plans)
 
-### No glob expansion
-
-ls `*.go` passes the literal `*.go` to ls. On macOS/Linux, external commands don't expand globs — that's the shell's job. The README acknowledges this is coming.
-
-### No cd - (previous directory)
-
-Noted as a TODO in builtins.go:60.
-
 ### No $? / last exit code
 
 There's no way to access the previous command's exit code from the shell or from JS scripts. The history records it, but it's not exposed as an env var or gish.lastExitCode.

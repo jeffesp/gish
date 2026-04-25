@@ -61,10 +61,16 @@ func builtinCd(cmd *Command, ctx *ExecCtx) error {
 		dir = os.Getenv("HOME")
 	case 1:
 		// TODO: support '-' to go back a dir
-		dir = args[0].Value
+		if args[0].Value == "-" {
+			dir = os.Getenv("OLDPWD")
+		} else {
+			dir = args[0].Value
+		}
 	default:
 		return fmt.Errorf("usage: cd [dir]")
 	}
+	cwd, _ := os.Getwd()
+	os.Setenv("OLDPWD", cwd)
 	return os.Chdir(dir)
 }
 

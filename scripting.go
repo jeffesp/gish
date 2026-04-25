@@ -15,6 +15,7 @@ import (
 
 var jsVM *goja.Runtime
 var jsmu sync.Mutex
+var promptFn goja.Callable
 
 // InitScripting creates the JS runtime, wires the gish API, and loads user scripts.
 // Call after ctx.Out is set to the final writer (terminal or stdout).
@@ -207,7 +208,35 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return vm.ToValue(string(data))
 	})
 
+	// gish.setPrompt(fn)
+	gishObj.Set("setPrompt", func(call goja.FunctionCall) goja.Value {
+		fn, ok := goja.AssertFunction(call.Argument(0))
+		if !ok {
+			panic(vm.NewTypeError("argument must be a function"))
+		}
+		promptFn = fn
+		return goja.Undefined()
+	})
+
 	vm.Set("gish", gishObj)
+}
+
+const defaultPrompt = "gish> "
+
+// JSPrompt returns the current prompt string by calling the JS prompt function.
+// Falls back to "gish> " if no prompt function is set or if it errors.
+func JSPrompt() string {
+	jsmu.Lock()
+	defer jsmu.Unlock()
+
+	if promptFn == nil {
+		return defaultPrompt
+	}
+	val, err := callSafe(promptFn, goja.Undefined())
+	if err != nil || val == nil || goja.IsUndefined(val) {
+		return defaultPrompt
+	}
+	return val.String()
 }
 
 func builtinJS(cmd *Command, ctx *ExecCtx) error {

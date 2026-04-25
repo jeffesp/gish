@@ -117,6 +117,7 @@ func runRawREPL(ctx *ExecCtx) {
 	InitScripting(termCtx)
 
 	for {
+		t.SetPrompt(JSPrompt())
 		line, err := t.ReadLine()
 		if err != nil {
 			break
@@ -138,7 +139,7 @@ func runScannerREPL(ctx *ExecCtx) {
 	InitScripting(ctx)
 	scanner := bufio.NewScanner(ctx.In)
 	for {
-		fmt.Fprint(ctx.Out, "gish> ")
+		fmt.Fprint(ctx.Out, JSPrompt())
 		if !scanner.Scan() {
 			break
 		}

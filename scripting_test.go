@@ -458,6 +458,38 @@ func TestLoadInitScriptMissing(t *testing.T) {
 	loadInitScript(jsVM, ctx)
 }
 
+func TestJSPromptDefault(t *testing.T) {
+	initTestVM(t)
+	promptFn = nil
+	if got := JSPrompt(); got != "gish> " {
+		t.Errorf("got %q want %q", got, "gish> ")
+	}
+}
+
+func TestJSPromptCustom(t *testing.T) {
+	initTestVM(t)
+
+	_, err := jsVM.RunString(`gish.setPrompt(function() { return "custom> "; })`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := JSPrompt(); got != "custom> " {
+		t.Errorf("got %q want %q", got, "custom> ")
+	}
+}
+
+func TestJSPromptErrorFallback(t *testing.T) {
+	initTestVM(t)
+
+	_, err := jsVM.RunString(`gish.setPrompt(function() { throw "boom"; })`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := JSPrompt(); got != "gish> " {
+		t.Errorf("got %q want %q on error", got, "gish> ")
+	}
+}
+
 func TestConfigDir(t *testing.T) {
 	// GISH_CONFIG_DIR takes priority
 	t.Setenv("GISH_CONFIG_DIR", "/custom/config")

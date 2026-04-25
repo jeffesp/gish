@@ -8,11 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/dop251/goja"
 )
 
 var jsVM *goja.Runtime
+var jsmu sync.Mutex
 
 // InitScripting creates the JS runtime, wires the gish API, and loads user scripts.
 // Call after ctx.Out is set to the final writer (terminal or stdout).
@@ -36,6 +38,9 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 			panic(vm.NewTypeError("second argument must be a function"))
 		}
 		RegisterBuiltin(name, func(bCmd *Command, bCtx *ExecCtx) error {
+			jsmu.Lock()
+			defer jsmu.Unlock()
+
 			jsCtx := vm.NewObject()
 			jsCtx.Set("line", bCmd.Line)
 			jsCtx.Set("name", bCmd.Name())
@@ -175,7 +180,7 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	// gish.parseJSON(str)
 	gishObj.Set("parseJSON", func(call goja.FunctionCall) goja.Value {
 		str := call.Argument(0).String()
-		var obj interface{}
+		var obj any
 		if err := json.Unmarshal([]byte(str), &obj); err != nil {
 			panic(vm.NewTypeError("parseJSON: %s", err.Error()))
 		}
@@ -211,6 +216,9 @@ func builtinJS(cmd *Command, ctx *ExecCtx) error {
 		return fmt.Errorf("usage: js <expression>")
 	}
 	expr := strings.Join(tokenValues(args), " ")
+
+	jsmu.Lock()
+	defer jsmu.Unlock()
 
 	val, err := jsVM.RunString(expr)
 	if err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -487,6 +488,118 @@ func TestJSPromptErrorFallback(t *testing.T) {
 	}
 	if got := JSPrompt(); got != "gish> " {
 		t.Errorf("got %q want %q on error", got, "gish> ")
+	}
+}
+
+func TestGishSource(t *testing.T) {
+	buf, _ := initTestVM(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lib.js")
+	os.WriteFile(path, []byte(`var libLoaded = true; gish.println("lib loaded")`), 0644)
+
+	buf.Reset()
+	_, err := jsVM.RunString(fmt.Sprintf(`gish.source(%q)`, path))
+	if err != nil {
+		t.Fatalf("gish.source error: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "lib loaded" {
+		t.Errorf("got %q want %q", got, "lib loaded")
+	}
+
+	// Verify the sourced file's side effects are visible
+	val, err := jsVM.RunString(`libLoaded`)
+	if err != nil {
+		t.Fatalf("libLoaded check: %v", err)
+	}
+	if !val.ToBoolean() {
+		t.Error("expected libLoaded to be true")
+	}
+}
+
+func TestGishSourceMissing(t *testing.T) {
+	initTestVM(t)
+
+	_, err := jsVM.RunString(`gish.source("/nonexistent/file.js")`)
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestGishSourceSyntaxError(t *testing.T) {
+	initTestVM(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.js")
+	os.WriteFile(path, []byte(`function(`), 0644)
+
+	_, err := jsVM.RunString(fmt.Sprintf(`gish.source(%q)`, path))
+	if err == nil {
+		t.Fatal("expected error for syntax error")
+	}
+}
+
+func TestSourceFile(t *testing.T) {
+	buf, ctx := initTestVM(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.js")
+	os.WriteFile(path, []byte(`gish.println("sourced")`), 0644)
+
+	buf.Reset()
+	cmd := &Command{
+		Tokens: []Token{{TokenWord, "source"}, {TokenWord, path}},
+		Line:   "source " + path,
+	}
+	if err := builtinSource(cmd, ctx); err != nil {
+		t.Fatalf("source error: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "sourced" {
+		t.Errorf("got %q want %q", got, "sourced")
+	}
+}
+
+func TestSourceFileMissing(t *testing.T) {
+	_, ctx := initTestVM(t)
+
+	cmd := &Command{
+		Tokens: []Token{{TokenWord, "source"}, {TokenWord, "/nonexistent/file.js"}},
+		Line:   "source /nonexistent/file.js",
+	}
+	if err := builtinSource(cmd, ctx); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestSourceFileSyntaxError(t *testing.T) {
+	_, ctx := initTestVM(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.js")
+	os.WriteFile(path, []byte(`function(`), 0644)
+
+	cmd := &Command{
+		Tokens: []Token{{TokenWord, "source"}, {TokenWord, path}},
+		Line:   "source " + path,
+	}
+	err := builtinSource(cmd, ctx)
+	if err == nil {
+		t.Fatal("expected error for syntax error")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("error %q should mention file path", err.Error())
+	}
+}
+
+func TestSourceNoArgs(t *testing.T) {
+	_, ctx := initTestVM(t)
+
+	cmd := &Command{
+		Tokens: []Token{{TokenWord, "source"}},
+		Line:   "source",
+	}
+	if err := builtinSource(cmd, ctx); err == nil {
+		t.Fatal("expected error for no args")
 	}
 }
 

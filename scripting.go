@@ -25,6 +25,7 @@ func InitScripting(ctx *ExecCtx) {
 
 	setupAPI(jsVM, ctx)
 	RegisterBuiltin("js", builtinJS)
+	RegisterBuiltin("source", builtinSource)
 	loadInitScript(jsVM, ctx)
 }
 
@@ -208,6 +209,24 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return vm.ToValue(string(data))
 	})
 
+	// gish.source(path) — load and execute a JS file
+	gishObj.Set("source", func(call goja.FunctionCall) goja.Value {
+		path := call.Argument(0).String()
+		src, err := os.ReadFile(path)
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
+		prg, err := goja.Compile(path, string(src), false)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("%s: %w", path, err)))
+		}
+		val, err := vm.RunProgram(prg)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("%s: %w", path, err)))
+		}
+		return val
+	})
+
 	// gish.setPrompt(fn)
 	gishObj.Set("setPrompt", func(call goja.FunctionCall) goja.Value {
 		fn, ok := goja.AssertFunction(call.Argument(0))
@@ -255,6 +274,38 @@ func builtinJS(cmd *Command, ctx *ExecCtx) error {
 			return fmt.Errorf("%s", ex.Value().String())
 		}
 		return err
+	}
+	if val != nil && !goja.IsUndefined(val) {
+		fmt.Fprintln(ctx.Out, val.String())
+	}
+	return nil
+}
+
+func builtinSource(cmd *Command, ctx *ExecCtx) error {
+	args := cmd.Args()
+	if len(args) == 0 {
+		return fmt.Errorf("usage: source <file.js>")
+	}
+	path := args[0].Value
+
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	jsmu.Lock()
+	defer jsmu.Unlock()
+
+	prg, err := goja.Compile(path, string(src), false)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	val, err := jsVM.RunProgram(prg)
+	if err != nil {
+		if ex, ok := err.(*goja.Exception); ok {
+			return fmt.Errorf("%s: %s", path, ex.Value().String())
+		}
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	if val != nil && !goja.IsUndefined(val) {
 		fmt.Fprintln(ctx.Out, val.String())

@@ -17,11 +17,17 @@ scripting.go:16 — InitScripting replaces the global jsVM on every call. Any bu
 context.go:12-13 — Two callbacks on ExecCtx both manage raw/cooked terminal transitions. RunCmd wraps a single command's Run(), RestoreTerm is called before a pipeline. This split works but creates an implicit
 contract: single commands use one path, pipelines use another. A unified approach would be clearer.
 
+### gish.source requires absolute paths to the files
+
 ## Missing Features (acknowledged in README/plans)
 
 ### No $? / last exit code
 
 There's no way to access the previous command's exit code from the shell or from JS scripts. The history records it, but it's not exposed as an env var or gish.lastExitCode.
+
+### No ~ in cd
+
+Probably need to support it not only for `cd`, but that is where I have noticed it most.
 
 ### Prompt function can fail
 
@@ -29,6 +35,7 @@ You don't get any output about what went wrong. There is an error swallowed by t
 
 ## Test Gaps
 
+- Tests pollute actual history for use.
 - signals.go — Completely untested. Signal forwarding to child processes is critical correctness code.
 - Pipeline error paths — Only the happy path (echo | cat) is tested. Missing: failed stage, command-not-found in a stage, pipe creation failure.
 - exec builtin — Understandably hard to test (syscall.Exec replaces the process), but could be tested up to the LookPath call.

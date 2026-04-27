@@ -48,7 +48,7 @@ func expandGlobs(tokens []Token) []Token {
 
 			newTokens := make([]Token, len(res))
 			for j, val := range res {
-				newTokens[j] = Token{Kind: TokenWord, Value: val}
+				newTokens[j] = Token{TokenWord, val}
 			}
 			out = append(out, newTokens...)
 		} else {

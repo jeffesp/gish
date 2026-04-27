@@ -23,13 +23,12 @@ contract: single commands use one path, pipelines use another. A unified approac
 
 There's no way to access the previous command's exit code from the shell or from JS scripts. The history records it, but it's not exposed as an env var or gish.lastExitCode.
 
-### No way to alias commands
+### Prompt function can fail
 
-What I want is to have a builtin that sets a permanent alias and then maybe some commands to manage. Or it can just write to a alias.js that is in the config dir.
+You don't get any output about what went wrong. There is an error swallowed by the execution of the JS, and it needs to be bubbled back to the `JSPrompt` function, I think.
 
 ## Test Gaps
 
 - signals.go — Completely untested. Signal forwarding to child processes is critical correctness code.
 - Pipeline error paths — Only the happy path (echo | cat) is tested. Missing: failed stage, command-not-found in a stage, pipe creation failure.
-- tokenize with adjacent pipes — foo|bar behavior isn't tested (and is buggy per item 3).
 - exec builtin — Understandably hard to test (syscall.Exec replaces the process), but could be tested up to the LookPath call.

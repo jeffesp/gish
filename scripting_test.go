@@ -178,6 +178,53 @@ func TestGishPrint(t *testing.T) {
 	}
 }
 
+func TestGishPrintObject(t *testing.T) {
+	buf, _ := initTestVM(t)
+	buf.Reset()
+
+	_, err := jsVM.RunString(`gish.println({name: "gish", version: 1})`)
+	if err != nil {
+		t.Fatalf("println object failed: %v", err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if !strings.Contains(got, `"name"`) || !strings.Contains(got, `"gish"`) {
+		t.Errorf("expected JSON object output, got %q", got)
+	}
+	if !strings.Contains(got, "  ") {
+		t.Errorf("expected indented output, got %q", got)
+	}
+}
+
+func TestGishPrintArray(t *testing.T) {
+	buf, _ := initTestVM(t)
+	buf.Reset()
+
+	_, err := jsVM.RunString(`gish.println([1, 2, 3])`)
+	if err != nil {
+		t.Fatalf("println array failed: %v", err)
+	}
+	got := strings.TrimSpace(buf.String())
+	if !strings.HasPrefix(got, "[") {
+		t.Errorf("expected array output, got %q", got)
+	}
+}
+
+func TestGishPrintPrimitive(t *testing.T) {
+	buf, _ := initTestVM(t)
+
+	buf.Reset()
+	jsVM.RunString(`gish.print(42)`)
+	if got := buf.String(); got != "42" {
+		t.Errorf("number: got %q want %q", got, "42")
+	}
+
+	buf.Reset()
+	jsVM.RunString(`gish.print(true)`)
+	if got := buf.String(); got != "true" {
+		t.Errorf("bool: got %q want %q", got, "true")
+	}
+}
+
 func TestGishExec(t *testing.T) {
 	buf, _ := initTestVM(t)
 	buf.Reset()

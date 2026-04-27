@@ -62,11 +62,11 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 
 	// gish.print / gish.println
 	gishObj.Set("print", func(call goja.FunctionCall) goja.Value {
-		fmt.Fprint(ctx.Out, call.Argument(0).String())
+		fmt.Fprint(ctx.Out, formatJSValue(vm, call.Argument(0)))
 		return goja.Undefined()
 	})
 	gishObj.Set("println", func(call goja.FunctionCall) goja.Value {
-		fmt.Fprintln(ctx.Out, call.Argument(0).String())
+		fmt.Fprintln(ctx.Out, formatJSValue(vm, call.Argument(0)))
 		return goja.Undefined()
 	})
 
@@ -377,4 +377,29 @@ func callSafe(fn goja.Callable, this goja.Value, args ...goja.Value) (goja.Value
 		val, jsErr = fn(this, args...)
 	}()
 	return val, jsErr
+}
+
+// formatJSValue returns a string representation of a JS value,
+// pretty-printing objects and arrays as indented JSON.
+func formatJSValue(vm *goja.Runtime, val goja.Value) string {
+	if val == nil || goja.IsUndefined(val) {
+		return "undefined"
+	}
+	if goja.IsNull(val) {
+		return "null"
+	}
+
+	// For objects (including arrays), pretty-print as JSON
+	if obj := val.ToObject(vm); obj != nil {
+		switch obj.ClassName() {
+		case "Object", "Array":
+			exported := obj.Export()
+			data, err := json.MarshalIndent(exported, "", "  ")
+			if err == nil {
+				return string(data)
+			}
+		}
+	}
+
+	return val.String()
 }

@@ -275,11 +275,17 @@ func JSPrompt() string {
 }
 
 func builtinJS(cmd *Command, ctx *ExecCtx) error {
-	args := cmd.Args()
-	if len(args) == 0 {
-		return fmt.Errorf("usage: js <expression>")
+	// Prefer the raw line over re-joined tokens so quoted strings keep
+	// their quotes. cmd.Line is empty inside a pipeline stage; fall back
+	// to joined token values in that case.
+	expr := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cmd.Line), cmd.Name()))
+	if expr == "" {
+		args := cmd.Args()
+		if len(args) == 0 {
+			return fmt.Errorf("usage: js <expression>")
+		}
+		expr = strings.Join(tokenValues(args), " ")
 	}
-	expr := strings.Join(tokenValues(args), " ")
 
 	jsmu.Lock()
 	defer jsmu.Unlock()

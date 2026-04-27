@@ -227,6 +227,22 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return val
 	})
 
+	// gish.alias(name, body)
+	gishObj.Set("alias", func(call goja.FunctionCall) goja.Value {
+		name := call.Argument(0).String()
+		body := call.Argument(1).String()
+		if err := setAlias(name, body); err != nil {
+			panic(vm.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// gish.unalias(name)
+	gishObj.Set("unalias", func(call goja.FunctionCall) goja.Value {
+		unsetAlias(call.Argument(0).String())
+		return goja.Undefined()
+	})
+
 	// gish.setPrompt(fn)
 	gishObj.Set("setPrompt", func(call goja.FunctionCall) goja.Value {
 		fn, ok := goja.AssertFunction(call.Argument(0))

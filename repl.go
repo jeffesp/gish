@@ -40,6 +40,11 @@ func execLine(line string, ctx *ExecCtx) {
 	}
 	tokens = expandVars(tokens)
 	tokens = expandGlobs(tokens)
+	tokens, err = expandAliases(tokens)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return
+	}
 
 	exe, err := parseTokens(tokens, line)
 	if err != nil {

@@ -350,9 +350,19 @@ func configDir() string {
 }
 
 func loadInitScript(vm *goja.Runtime, ctx *ExecCtx) {
+	// save current dir and change to config dir for relative path references to work
+	currentDir, err := os.Getwd()
+	defer os.Chdir(currentDir)
+	if err != nil {
+		fmt.Fprintln(ctx.ErrOut, "gish: unable to get current dir")
+	}
 	dir := configDir()
 	if dir == "" {
 		return
+	}
+	err = os.Chdir(dir)
+	if err != nil {
+		return // missing config dir is not fatal
 	}
 	path := filepath.Join(dir, "init.js")
 	src, err := os.ReadFile(path)

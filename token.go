@@ -46,11 +46,18 @@ func expandGlobs(tokens []Token) []Token {
 				continue
 			}
 
-			newTokens := make([]Token, len(res))
-			for j, val := range res {
-				newTokens[j] = Token{TokenWord, val}
+			// Like standard shells, exclude dotfiles unless the
+			// pattern itself starts with a dot (e.g. ".*").
+			patBase := filepath.Base(t.Value)
+			includeDot := len(patBase) > 0 && patBase[0] == '.'
+
+			for _, val := range res {
+				base := filepath.Base(val)
+				if !includeDot && len(base) > 0 && base[0] == '.' {
+					continue
+				}
+				out = append(out, Token{TokenWord, val})
 			}
-			out = append(out, newTokens...)
 		} else {
 			out = append(out, t)
 		}

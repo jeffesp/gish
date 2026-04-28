@@ -77,11 +77,18 @@ func TestExpandTokens(t *testing.T) {
 }
 
 func TestGlobTokens(t *testing.T) {
-	temp := os.TempDir()
-	os.Chdir(temp)
+	temp, err := os.MkdirTemp("", "gish-glob-test")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(temp)
+	origDir, _ := os.Getwd()
+	os.Chdir(temp)
+	defer os.Chdir(origDir)
+
 	os.Create("README.md")
 	os.Create("TODO.md")
+	os.Create(".hidden.md")
 
 	cases := []struct {
 		name  string
@@ -89,6 +96,8 @@ func TestGlobTokens(t *testing.T) {
 		want  []Token
 	}{
 		{"matches files", []Token{{TokenWord, "*.md"}}, []Token{{TokenWord, "README.md"}, {TokenWord, "TODO.md"}}},
+		{"excludes dotfiles by default", []Token{{TokenWord, "*.md"}}, []Token{{TokenWord, "README.md"}, {TokenWord, "TODO.md"}}},
+		{"dot pattern matches dotfiles", []Token{{TokenWord, ".*.md"}}, []Token{{TokenWord, ".hidden.md"}}},
 		{"single quote string does not glob", []Token{{TokenSingleQuoted, "'*.md'"}}, []Token{{TokenSingleQuoted, "'*.md'"}}},
 		{"double quote string does not glob", []Token{{TokenDoubleQuoted, "\"*.md\""}}, []Token{{TokenDoubleQuoted, "\"*.md\""}}},
 		{"not matching does not glob", []Token{{TokenWord, "*.xyz"}}, []Token{{TokenWord, "*.xyz"}}},

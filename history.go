@@ -178,6 +178,12 @@ func expandHistory(line string) (string, bool) {
 		if err != nil {
 			return line, false
 		}
+
+		commandNum, err := strconv.Atoi(prefix)
+		if err == nil && commandNum < len(entries) {
+			return entries[commandNum].Command, true
+		}
+
 		for i := len(entries) - 1; i >= 0; i-- {
 			if strings.HasPrefix(entries[i].Command, prefix) {
 				return entries[i].Command, true

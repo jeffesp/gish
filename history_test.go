@@ -516,13 +516,13 @@ func TestExpandHistoryBang(t *testing.T) {
 		t.Errorf("!ls = %q, want %q", expanded, "ls -la")
 	}
 
-	// !0 should rerun the first command
-	expanded, ok = expandHistory("!0")
+	// !1 should rerun the first command
+	expanded, ok = expandHistory("!1")
 	if !ok {
-		t.Fatal("!0 should expand")
+		t.Fatal("!1 should expand")
 	}
 	if expanded != "echo hello" {
-		t.Errorf("!0 = %q, want %q", expanded, "echo hello")
+		t.Errorf("!1 = %q, want %q", expanded, "echo hello")
 	}
 
 	// !23 should not expand

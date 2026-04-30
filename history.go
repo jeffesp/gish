@@ -180,7 +180,8 @@ func expandHistory(line string) (string, bool) {
 		}
 
 		commandNum, err := strconv.Atoi(prefix)
-		if err == nil && commandNum < len(entries) {
+		commandNum = commandNum - 1
+		if err == nil && commandNum >= 0 && commandNum < len(entries) {
 			return entries[commandNum].Command, true
 		}
 

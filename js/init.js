@@ -49,5 +49,6 @@ gish.register("gl", function (ctx) {
 
 gish.alias("ls", "lsd --group-dirs first --icon never");
 gish.alias("ll", "ls -l");
+gish.alias("hg", "history | grep");
 
 gish.source("./prompt.js");

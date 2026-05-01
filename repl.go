@@ -28,9 +28,11 @@ func RunREPL(ctx *ExecCtx) {
 }
 
 func execLine(line string, ctx *ExecCtx) {
+	skipHistory := false
 	if expanded, ok := expandHistory(line); ok {
 		fmt.Fprintln(ctx.Out, expanded)
 		line = expanded
+		skipHistory = true
 	}
 
 	tokens, err := tokenize(line)
@@ -61,14 +63,16 @@ func execLine(line string, ctx *ExecCtx) {
 		code = exitCode(err)
 	}
 
-	appendHistory(HistoryEntry{
-		Command:   line,
-		Dir:       dir,
-		ExitCode:  code,
-		StartTime: start,
-		EndTime:   time.Now(),
-		SessionID: sessionID,
-	})
+	if !skipHistory {
+		appendHistory(HistoryEntry{
+			Command:   line,
+			Dir:       dir,
+			ExitCode:  code,
+			StartTime: start,
+			EndTime:   time.Now(),
+			SessionID: sessionID,
+		})
+	}
 }
 
 func runRawREPL(ctx *ExecCtx) {

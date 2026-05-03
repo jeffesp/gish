@@ -60,7 +60,6 @@ func builtinCd(cmd *Command, ctx *ExecCtx) error {
 	case 0:
 		dir = os.Getenv("HOME")
 	case 1:
-		// TODO: support '-' to go back a dir
 		if args[0].Value == "-" {
 			dir = os.Getenv("OLDPWD")
 		} else {

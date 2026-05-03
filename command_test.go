@@ -1,30 +1,37 @@
 package main
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 )
 
-func TestCommandExecUsesRunCmd(t *testing.T) {
-	cmd := &Command{Tokens: []Token{{TokenWord, "true"}}}
+func TestCommandExecCallsWireCmd(t *testing.T) {
+	cmd := &Command{Tokens: []Token{{TokenWord, "/bin/echo"}, {TokenWord, "hello"}}}
 
-	var called bool
-	ctx := &ExecCtx{
+	systemOut := &strings.Builder{}
+	systemCtx := &ExecCtx{
 		In:     strings.NewReader(""),
-		Out:    &strings.Builder{},
+		Out:    systemOut,
 		ErrOut: &strings.Builder{},
-		RunCmd: func(c *exec.Cmd) error {
-			called = true
-			return c.Run()
-		},
+	}
+
+	ctxOut := &strings.Builder{}
+	ctx := &ExecCtx{
+		In:       strings.NewReader(""),
+		Out:      ctxOut,
+		ErrOut:   &strings.Builder{},
+		SystemIO: systemCtx,
 	}
 
 	if err := cmd.Exec(ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !called {
-		t.Error("Command.Exec did not use RunCmd for external command")
+
+	if systemOut.String() != "hello\n" {
+		t.Errorf("expected output on SystemIO.Out, got %q", systemOut.String())
+	}
+	if ctxOut.String() != "" {
+		t.Errorf("expected ctx.Out to be unused, got %q", ctxOut.String())
 	}
 }
 
@@ -40,9 +47,6 @@ func TestPipelineRunsMultipleCommands(t *testing.T) {
 		In:     strings.NewReader(""),
 		Out:    output,
 		ErrOut: &strings.Builder{},
-		RunCmd: func(c *exec.Cmd) error {
-			return c.Run()
-		},
 		RestoreTerm: func() func() {
 			restoreCalled = true
 			return func() { termRawCalled = true }

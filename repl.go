@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -88,22 +87,15 @@ func runRawREPL(ctx *ExecCtx) {
 	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
 
 	termCtx := &ExecCtx{
-		In:     in,
-		Out:    t,
-		ErrOut: t,
+		In:       in,
+		Out:      t,
+		ErrOut:   t,
+		SystemIO: ctx,
 		RestoreTerm: func() func() {
 			term.Restore(fd, origState)
 			return func() { term.MakeRaw(fd) } //nolint:errcheck
 		},
-		RunCmd: func(cmd *exec.Cmd) error {
-			cmd.Stdin = ctx.In
-			cmd.Stdout = ctx.Out
-			cmd.Stderr = ctx.ErrOut
-			term.Restore(fd, origState)
-			err := cmd.Run()
-			term.MakeRaw(fd) //nolint:errcheck
-			return err
-		}}
+	}
 
 	if w, h, err := term.GetSize(fd); err == nil {
 		t.SetSize(w, h)
@@ -139,12 +131,6 @@ func runRawREPL(ctx *ExecCtx) {
 }
 
 func runScannerREPL(ctx *ExecCtx) {
-	ctx.RunCmd = func(cmd *exec.Cmd) error {
-		cmd.Stdin = ctx.In
-		cmd.Stdout = ctx.Out
-		cmd.Stderr = ctx.ErrOut
-		return cmd.Run()
-	}
 	InitScripting(ctx)
 	scanner := bufio.NewScanner(ctx.In)
 	for {

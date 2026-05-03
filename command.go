@@ -61,12 +61,11 @@ func (c *Command) Exec(ctx *ExecCtx) error {
 	clearCmd := SetCurrentCmd(cmd)
 	defer clearCmd()
 
-	if ctx.RunCmd != nil {
-		return ctx.RunCmd(cmd)
+	ctx.WireCmd(cmd)
+	if ctx.RestoreTerm != nil {
+		reenter := ctx.RestoreTerm()
+		defer reenter()
 	}
-	cmd.Stdin = ctx.In
-	cmd.Stdout = ctx.Out
-	cmd.Stderr = ctx.ErrOut
 	return cmd.Run()
 }
 
@@ -76,8 +75,8 @@ type Pipeline struct {
 
 func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	if ctx.RestoreTerm != nil {
-		termRaw := ctx.RestoreTerm()
-		defer termRaw()
+		reenter := ctx.RestoreTerm()
+		defer reenter()
 	}
 
 	waits := make([]func() error, len(p.Stages))

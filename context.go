@@ -9,6 +9,16 @@ type ExecCtx struct {
 	In          io.Reader
 	Out         io.Writer
 	ErrOut      io.Writer
-	RunCmd      func(*exec.Cmd) error // terminal restore/raw mode callback
-	RestoreTerm func() func()         // restore terminal; returns function to re-enter raw mode
+	SystemIO    *ExecCtx
+	RestoreTerm func() func() // restore terminal; returns function to re-enter raw mode
+}
+
+func (ctx *ExecCtx) WireCmd(cmd *exec.Cmd) {
+	src := ctx
+	if ctx.SystemIO != nil {
+		src = ctx.SystemIO
+	}
+	cmd.Stdin = src.In
+	cmd.Stdout = src.Out
+	cmd.Stderr = src.ErrOut
 }

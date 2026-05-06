@@ -13,10 +13,6 @@ scripting.go:16 — InitScripting replaces the global jsVM on every call. Any bu
 
 ### gish.source requires absolute paths to the files
 
-### Pipeline can deadlock on large output
-
-command.go:108-111 — Stages are waited sequentially (`waits[0]()`, then `waits[1]()`, etc). If an early stage produces more output than the OS pipe buffer (~64KB), it blocks on write. But its `wait()` won't return until the write completes, and the next stage (the reader) hasn't been waited yet. In practice this is masked because `Start` launches goroutines, but if a builtin is used as an early pipeline stage, it runs in a goroutine that could block. The real risk: if the builtin's goroutine holds `jsmu` while blocked on the pipe, the shell deadlocks.
-
 ### Pipe read-side is never explicitly closed
 
 command.go:92-104 — The `pr` (read end of the pipe) created for each intermediate stage is passed as the next stage's stdin but never closed. The downstream process's exit closes its stdin handle, so in practice the fd is reclaimed, but it leaks if a stage fails before reading. Explicit `defer pr.Close()` after the stage that reads from it would be defensive.

@@ -41,19 +41,26 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		}
 		RegisterBuiltin(name, func(bCmd *Command, bCtx *ExecCtx) error {
 			jsmu.Lock()
-			defer jsmu.Unlock()
-
 			jsCtx := vm.NewObject()
 			jsCtx.Set("line", bCmd.Line)
 			jsCtx.Set("name", bCmd.Name())
 			jsCtx.Set("args", tokenValues(bCmd.Args()))
 
 			val, err := callSafe(cb, goja.Undefined(), jsCtx)
+			// Extract the string while we still hold the lock, then release
+			// before writing to Out — the write may block on a full pipe buffer
+			// and we must not hold jsmu across blocking I/O.
+			var output string
+			if err == nil && val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+				output = val.String()
+			}
+			jsmu.Unlock()
+
 			if err != nil {
 				return err
 			}
-			if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
-				fmt.Fprintln(bCtx.Out, val.String())
+			if output != "" {
+				fmt.Fprintln(bCtx.Out, output)
 			}
 			return nil
 		})
@@ -288,17 +295,21 @@ func builtinJS(cmd *Command, ctx *ExecCtx) error {
 	}
 
 	jsmu.Lock()
-	defer jsmu.Unlock()
-
 	val, err := jsVM.RunString(expr)
+	var output string
+	if err == nil && val != nil && !goja.IsUndefined(val) {
+		output = val.String()
+	}
+	jsmu.Unlock()
+
 	if err != nil {
 		if ex, ok := err.(*goja.Exception); ok {
 			return fmt.Errorf("%s", ex.Value().String())
 		}
 		return err
 	}
-	if val != nil && !goja.IsUndefined(val) {
-		fmt.Fprintln(ctx.Out, val.String())
+	if output != "" {
+		fmt.Fprintln(ctx.Out, output)
 	}
 	return nil
 }
@@ -316,21 +327,26 @@ func builtinSource(cmd *Command, ctx *ExecCtx) error {
 	}
 
 	jsmu.Lock()
-	defer jsmu.Unlock()
-
 	prg, err := goja.Compile(path, string(src), false)
 	if err != nil {
+		jsmu.Unlock()
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	val, err := jsVM.RunProgram(prg)
+	var output string
+	if err == nil && val != nil && !goja.IsUndefined(val) {
+		output = val.String()
+	}
+	jsmu.Unlock()
+
 	if err != nil {
 		if ex, ok := err.(*goja.Exception); ok {
 			return fmt.Errorf("%s: %s", path, ex.Value().String())
 		}
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	if val != nil && !goja.IsUndefined(val) {
-		fmt.Fprintln(ctx.Out, val.String())
+	if output != "" {
+		fmt.Fprintln(ctx.Out, output)
 	}
 	return nil
 }

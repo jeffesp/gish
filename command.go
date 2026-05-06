@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 )
 
 type Executable interface {
@@ -105,10 +106,16 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 		}
 	}
 
-	err := make([]error, len(waits))
+	errs := make([]error, len(waits))
+	var wg sync.WaitGroup
 	for i, fun := range waits {
-		err[i] = fun()
+		wg.Add(1)
+		go func(i int, fun func() error) {
+			errs[i] = fun()
+			wg.Done()
+		}(i, fun)
 	}
+	wg.Wait()
 
-	return err[len(waits)-1]
+	return errs[len(waits)-1]
 }

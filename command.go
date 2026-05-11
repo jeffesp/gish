@@ -71,7 +71,8 @@ func (c *Command) Exec(ctx *ExecCtx) error {
 }
 
 type Pipeline struct {
-	Stages []*Command
+	Stages   []*Command
+	MergeErr []bool
 }
 
 func (p *Pipeline) Exec(ctx *ExecCtx) error {
@@ -96,6 +97,10 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 				return fmt.Errorf("unable to create pipe: %v", err)
 			}
 			localCtx.Out = pw
+			// if merging err+out assign to the same writer
+			if len(p.MergeErr) > i && p.MergeErr[i] {
+				localCtx.ErrOut = pw
+			}
 			nextIn = pr
 			wait := stage.Start(localCtx)
 			waits[i] = func() error {

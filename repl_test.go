@@ -1,6 +1,8 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 func mustTokenize(t *testing.T, s string) []Token {
 	t.Helper()
@@ -108,6 +110,25 @@ func TestParseTokens(t *testing.T) {
 		_, err := parseTokens(tokens, "grep foo | | sort")
 		if err == nil {
 			t.Error("expected error for consecutive pipes, got nil")
+		}
+	})
+
+	t.Run("merge pipe is recognized as distinct from normal pipe", func(t *testing.T) {
+		tokens := mustTokenize(t, "grep foo |& sort | uniq")
+		exe, err := parseTokens(tokens, "grep foo |& sort | uniq")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		p := exe.(*Pipeline)
+		if len(p.MergeErr) != 2 {
+			t.Error("did not find the right number of pipes")
+		}
+		if !p.MergeErr[0] {
+			t.Errorf("did not set that first pipe should merge stderr into output")
+		}
+		if p.MergeErr[1] {
+			t.Errorf("did not set that first pipe should NOT merge stderr into output")
 		}
 	})
 }

@@ -14,6 +14,7 @@ const (
 	TokenSingleQuoted                  // 'text' — no expansion
 	TokenDoubleQuoted                  // "text" — expansion later
 	TokenPipe                          // literal pipe char: |
+	TokenMergePipe                     // literal pipe + amp: |&
 )
 
 type Token struct {
@@ -22,10 +23,10 @@ type Token struct {
 }
 
 func expandToken(t Token) Token {
-	if t.Kind == TokenSingleQuoted || t.Kind == TokenPipe {
-		return t
+	if t.Kind == TokenWord || t.Kind == TokenDoubleQuoted {
+		return Token{Kind: t.Kind, Value: os.ExpandEnv(t.Value)}
 	}
-	return Token{Kind: t.Kind, Value: os.ExpandEnv(t.Value)}
+	return t
 }
 
 func expandVars(tokens []Token) []Token {
@@ -102,7 +103,12 @@ func tokenize(line string) ([]Token, error) {
 				cur.Reset()
 				curKind = TokenWord
 			}
-			tokens = append(tokens, Token{TokenPipe, string(ch)})
+			if i < len(line)-1 && line[i+1] == '&' {
+				i = i + 1
+				tokens = append(tokens, Token{TokenMergePipe, "|&"})
+			} else {
+				tokens = append(tokens, Token{TokenPipe, string(ch)})
+			}
 		default:
 			if !inQuote {
 				curKind = TokenWord
@@ -113,6 +119,7 @@ func tokenize(line string) ([]Token, error) {
 	if inQuote {
 		return nil, fmt.Errorf("unclosed quote")
 	}
+	// close out last token
 	if cur.Len() > 0 {
 		tokens = append(tokens, Token{curKind, cur.String()})
 	}

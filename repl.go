@@ -47,7 +47,7 @@ func execLine(line string, ctx *ExecCtx) {
 		return
 	}
 
-	exe, err := parseTokens(tokens, line)
+	exe, _, err := parseTokens(tokens, line)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return

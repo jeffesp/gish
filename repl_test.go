@@ -16,7 +16,7 @@ func mustTokenize(t *testing.T, s string) []Token {
 func TestParseTokens(t *testing.T) {
 	t.Run("single command returns Command", func(t *testing.T) {
 		tokens := mustTokenize(t, "echo hello world")
-		exe, err := parseTokens(tokens, "echo hello world")
+		exe, _, err := parseTokens(tokens, "echo hello world")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -34,7 +34,7 @@ func TestParseTokens(t *testing.T) {
 
 	t.Run("two-stage pipeline returns Pipeline", func(t *testing.T) {
 		tokens := mustTokenize(t, "cat file.txt | grep foo")
-		exe, err := parseTokens(tokens, "cat file.txt | grep foo")
+		exe, _, err := parseTokens(tokens, "cat file.txt | grep foo")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -55,7 +55,7 @@ func TestParseTokens(t *testing.T) {
 
 	t.Run("three-stage pipeline", func(t *testing.T) {
 		tokens := mustTokenize(t, "cat file.txt | grep foo | sort")
-		exe, err := parseTokens(tokens, "cat file.txt | grep foo | sort")
+		exe, _, err := parseTokens(tokens, "cat file.txt | grep foo | sort")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -76,7 +76,7 @@ func TestParseTokens(t *testing.T) {
 
 	t.Run("pipeline stage args", func(t *testing.T) {
 		tokens := mustTokenize(t, "grep foo bar | sort -r")
-		exe, err := parseTokens(tokens, "grep foo bar | sort -r")
+		exe, _, err := parseTokens(tokens, "grep foo bar | sort -r")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -89,9 +89,21 @@ func TestParseTokens(t *testing.T) {
 		}
 	})
 
+	t.Run("recognize background job", func(t *testing.T) {
+		tokens := mustTokenize(t, "sleep 100 &")
+		_, isBackground, err := parseTokens(tokens, "sleep 100 &")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !isBackground {
+			t.Error("command not marked as background")
+		}
+	})
+
 	t.Run("leading pipe is error", func(t *testing.T) {
 		tokens := mustTokenize(t, "| grep foo")
-		_, err := parseTokens(tokens, "| grep foo")
+		_, _, err := parseTokens(tokens, "| grep foo")
 		if err == nil {
 			t.Error("expected error for leading pipe, got nil")
 		}
@@ -99,7 +111,7 @@ func TestParseTokens(t *testing.T) {
 
 	t.Run("trailing pipe is error", func(t *testing.T) {
 		tokens := mustTokenize(t, "grep foo |")
-		_, err := parseTokens(tokens, "grep foo |")
+		_, _, err := parseTokens(tokens, "grep foo |")
 		if err == nil {
 			t.Error("expected error for trailing pipe, got nil")
 		}
@@ -107,7 +119,7 @@ func TestParseTokens(t *testing.T) {
 
 	t.Run("consecutive pipes are error", func(t *testing.T) {
 		tokens := mustTokenize(t, "grep foo | | sort")
-		_, err := parseTokens(tokens, "grep foo | | sort")
+		_, _, err := parseTokens(tokens, "grep foo | | sort")
 		if err == nil {
 			t.Error("expected error for consecutive pipes, got nil")
 		}
@@ -115,7 +127,7 @@ func TestParseTokens(t *testing.T) {
 
 	t.Run("merge pipe is recognized as distinct from normal pipe", func(t *testing.T) {
 		tokens := mustTokenize(t, "grep foo |& sort | uniq")
-		exe, err := parseTokens(tokens, "grep foo |& sort | uniq")
+		exe, _, err := parseTokens(tokens, "grep foo |& sort | uniq")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

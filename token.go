@@ -15,6 +15,7 @@ const (
 	TokenDoubleQuoted                  // "text" — expansion later
 	TokenPipe                          // literal pipe char: |
 	TokenMergePipe                     // literal pipe + amp: |&
+	TokenBackground                    // literal amp - &, only valid at EOL
 )
 
 type Token struct {
@@ -109,6 +110,8 @@ func tokenize(line string) ([]Token, error) {
 			} else {
 				tokens = append(tokens, Token{TokenPipe, string(ch)})
 			}
+		case !inQuote && ch == '&' && i == len(line)-1:
+			tokens = append(tokens, Token{TokenBackground, "&"})
 		default:
 			if !inQuote {
 				curKind = TokenWord
@@ -134,27 +137,34 @@ func tokenValues(tokens []Token) []string {
 	return vals
 }
 
-func parseTokens(tokens []Token, line string) (Executable, error) {
+func parseTokens(tokens []Token, line string) (Executable, bool, error) {
 	var indices []int
 	for i, t := range tokens {
 		if t.Kind == TokenPipe || t.Kind == TokenMergePipe {
 			indices = append(indices, i)
 		}
 	}
+	background := false
+
+	if tokens[len(tokens)-1].Kind == TokenBackground {
+		background = true
+		tokens = tokens[:len(tokens)-1]
+	}
+
 	if len(indices) == 0 {
-		return &Command{Tokens: tokens, Line: line}, nil
+		return &Command{Tokens: tokens, Line: line}, background, nil
 	}
 
 	// make sure pipes are in valid places
 	if tokens[0].Kind == TokenPipe || tokens[0].Kind == TokenMergePipe {
-		return nil, fmt.Errorf(": cannot start with a pipe")
+		return nil, background, fmt.Errorf(": cannot start with a pipe")
 	}
 	if tokens[len(tokens)-1].Kind == TokenPipe || tokens[len(tokens)-1].Kind == TokenMergePipe {
-		return nil, fmt.Errorf(": cannot end with a pipe")
+		return nil, background, fmt.Errorf(": cannot end with a pipe")
 	}
 	for i := 1; i < len(indices); i++ {
 		if indices[i] == indices[i-1]+1 {
-			return nil, fmt.Errorf(": consecutive pipes")
+			return nil, background, fmt.Errorf(": consecutive pipes")
 		}
 	}
 
@@ -167,5 +177,5 @@ func parseTokens(tokens []Token, line string) (Executable, error) {
 		prev = idx + 1
 	}
 	stages = append(stages, &Command{Tokens: tokens[prev:]})
-	return &Pipeline{Stages: stages, MergeErr: mergeErr}, nil
+	return &Pipeline{Stages: stages, MergeErr: mergeErr}, background, nil
 }

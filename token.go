@@ -110,7 +110,12 @@ func tokenize(line string) ([]Token, error) {
 			} else {
 				tokens = append(tokens, Token{TokenPipe, string(ch)})
 			}
-		case !inQuote && ch == '&' && i == len(line)-1:
+		case !inQuote && ch == '&' && strings.TrimSpace(line[i+1:]) == "":
+			if cur.Len() > 0 {
+				tokens = append(tokens, Token{curKind, cur.String()})
+				cur.Reset()
+				curKind = TokenWord
+			}
 			tokens = append(tokens, Token{TokenBackground, "&"})
 		default:
 			if !inQuote {
@@ -138,17 +143,23 @@ func tokenValues(tokens []Token) []string {
 }
 
 func parseTokens(tokens []Token, line string) (Executable, bool, error) {
+	if len(tokens) == 0 {
+		return nil, false, fmt.Errorf(": empty command")
+	}
+	background := false
+	if tokens[len(tokens)-1].Kind == TokenBackground {
+		background = true
+		tokens = tokens[:len(tokens)-1]
+	}
+	if len(tokens) == 0 {
+		return nil, background, fmt.Errorf(": empty command")
+	}
+
 	var indices []int
 	for i, t := range tokens {
 		if t.Kind == TokenPipe || t.Kind == TokenMergePipe {
 			indices = append(indices, i)
 		}
-	}
-	background := false
-
-	if tokens[len(tokens)-1].Kind == TokenBackground {
-		background = true
-		tokens = tokens[:len(tokens)-1]
 	}
 
 	if len(indices) == 0 {

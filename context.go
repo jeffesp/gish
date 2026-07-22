@@ -11,6 +11,8 @@ type ExecCtx struct {
 	ErrOut      io.Writer
 	SystemIO    *ExecCtx
 	RestoreTerm func() func() // restore terminal; returns function to re-enter raw mode
+	JobMgr      *JobManager
+	TrackCmd    func(*exec.Cmd) func()
 }
 
 func (ctx *ExecCtx) WireCmd(cmd *exec.Cmd) {

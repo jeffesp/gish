@@ -40,16 +40,22 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
 	clearCmd := SetCurrentCmd(cmd)
+	clearTracked := func() {}
+	if ctx.TrackCmd != nil {
+		clearTracked = ctx.TrackCmd(cmd)
+	}
 
 	cmd.Stdin = ctx.In
 	cmd.Stdout = ctx.Out
 	cmd.Stderr = ctx.ErrOut
 	if err := cmd.Start(); err != nil {
 		clearCmd()
+		clearTracked()
 		return func() error { return err }
 	}
 	return func() error {
 		defer clearCmd()
+		defer clearTracked()
 		return cmd.Wait()
 	}
 }
@@ -61,6 +67,9 @@ func (c *Command) Exec(ctx *ExecCtx) error {
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
 	clearCmd := SetCurrentCmd(cmd)
 	defer clearCmd()
+	if ctx.TrackCmd != nil {
+		defer ctx.TrackCmd(cmd)()
+	}
 
 	ctx.WireCmd(cmd)
 	if ctx.RestoreTerm != nil {
@@ -85,8 +94,10 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	var nextIn io.Reader = ctx.In
 	for i, stage := range p.Stages {
 		localCtx := &ExecCtx{
-			In:     nextIn,
-			ErrOut: ctx.ErrOut,
+			In:       nextIn,
+			ErrOut:   ctx.ErrOut,
+			JobMgr:   ctx.JobMgr,
+			TrackCmd: ctx.TrackCmd,
 		}
 		if i == len(p.Stages)-1 {
 			localCtx.Out = ctx.Out

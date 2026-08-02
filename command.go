@@ -45,6 +45,11 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 		clearTracked = ctx.TrackCmd(cmd)
 	}
 
+	afterStart := func() {}
+	if ctx.PrepareProc != nil {
+		afterStart = ctx.PrepareProc(cmd)
+	}
+
 	cmd.Stdin = ctx.In
 	cmd.Stdout = ctx.Out
 	cmd.Stderr = ctx.ErrOut
@@ -53,6 +58,7 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 		clearTracked()
 		return func() error { return err }
 	}
+	afterStart()
 	return func() error {
 		defer clearCmd()
 		defer clearTracked()
@@ -94,10 +100,11 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	var nextIn io.Reader = ctx.In
 	for i, stage := range p.Stages {
 		localCtx := &ExecCtx{
-			In:       nextIn,
-			ErrOut:   ctx.ErrOut,
-			JobMgr:   ctx.JobMgr,
-			TrackCmd: ctx.TrackCmd,
+			In:          nextIn,
+			ErrOut:      ctx.ErrOut,
+			JobMgr:      ctx.JobMgr,
+			TrackCmd:    ctx.TrackCmd,
+			PrepareProc: ctx.PrepareProc,
 		}
 		if i == len(p.Stages)-1 {
 			localCtx.Out = ctx.Out

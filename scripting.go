@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/dop251/goja"
 )
@@ -101,6 +102,73 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		}
 		result.Set("exitCode", code)
 		return result
+	})
+
+	gishObj.Set("bg", func(call goja.FunctionCall) goja.Value {
+		if ctx.JobMgr == nil {
+			panic(vm.NewGoError(fmt.Errorf("job control is unavailable")))
+		}
+		name := call.Argument(0).String()
+		args := exportStringSlice(vm, call.Argument(1))
+		tokens := make([]Token, 0, len(args)+1)
+		tokens = append(tokens, Token{Kind: TokenWord, Value: name})
+		for _, arg := range args {
+			tokens = append(tokens, Token{Kind: TokenWord, Value: arg})
+		}
+		line := strings.Join(append([]string{name}, args...), " ")
+		job, err := ctx.JobMgr.StartBackground(&Command{Tokens: tokens, Line: line}, line, ctx)
+		if err != nil {
+			panic(vm.NewGoError(err))
+		}
+		return vm.ToValue(job.ID)
+	})
+
+	gishObj.Set("jobs", func(call goja.FunctionCall) goja.Value {
+		if ctx.JobMgr == nil {
+			return vm.ToValue([]map[string]any{})
+		}
+		jobs := ctx.JobMgr.ListJobs()
+		result := make([]map[string]any, len(jobs))
+		for i, job := range jobs {
+			result[i] = jobInfo(job)
+		}
+		return vm.ToValue(result)
+	})
+
+	gishObj.Set("job", func(call goja.FunctionCall) goja.Value {
+		if ctx.JobMgr == nil {
+			return goja.Null()
+		}
+		job := ctx.JobMgr.GetJob(int(call.Argument(0).ToInteger()))
+		if job == nil {
+			return goja.Null()
+		}
+		return vm.ToValue(jobInfo(job))
+	})
+
+	gishObj.Set("jobOutput", func(call goja.FunctionCall) goja.Value {
+		if ctx.JobMgr == nil {
+			return goja.Null()
+		}
+		job := ctx.JobMgr.GetJob(int(call.Argument(0).ToInteger()))
+		if job == nil {
+			return goja.Null()
+		}
+		return vm.ToValue(string(job.Output()))
+	})
+
+	gishObj.Set("killJob", func(call goja.FunctionCall) goja.Value {
+		if ctx.JobMgr == nil {
+			return vm.ToValue(false)
+		}
+		job := ctx.JobMgr.GetJob(int(call.Argument(0).ToInteger()))
+		if job == nil {
+			return vm.ToValue(false)
+		}
+		if err := job.Signal(syscall.SIGTERM); err != nil {
+			panic(vm.NewGoError(err))
+		}
+		return vm.ToValue(true)
 	})
 
 	// gish.spawn(cmd, args, onLine) — streaming line-by-line output
@@ -261,6 +329,22 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	})
 
 	vm.Set("gish", gishObj)
+}
+
+func jobInfo(job *Job) map[string]any {
+	snapshot := job.Snapshot()
+	state := "running"
+	if snapshot.State == JobDone {
+		state = "done"
+	}
+	return map[string]any{
+		"id":        snapshot.ID,
+		"command":   snapshot.Command,
+		"state":     state,
+		"dir":       snapshot.Dir,
+		"startTime": snapshot.StartTime,
+		"exitCode":  snapshot.ExitCode,
+	}
 }
 
 const defaultPrompt = "gish> "

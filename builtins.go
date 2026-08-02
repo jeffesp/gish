@@ -109,17 +109,25 @@ func builtinTitle(cmd *Command, ctx *ExecCtx) error {
 	return nil
 }
 
-func builtinExit(cmd *Command, _ctx *ExecCtx) error {
+func builtinExit(cmd *Command, ctx *ExecCtx) error {
 	if len(cmd.Args()) > 1 {
 		return fmt.Errorf("usage: exit [int]")
 	}
+	code := 0
 	if len(cmd.Args()) == 1 {
-		code, e := strconv.Atoi(cmd.Args()[0].Value)
-		if e != nil {
-			return e
+		var err error
+		code, err = strconv.Atoi(cmd.Args()[0].Value)
+		if err != nil {
+			return err
 		}
-		os.Exit(code)
 	}
-	os.Exit(0)
+	if ctx.JobMgr != nil {
+		if running, warn := ctx.JobMgr.WarnBeforeExit(); warn {
+			fmt.Fprintf(ctx.ErrOut, "gish: %d running jobs. Use 'exit' again to force.\n", running)
+			return nil
+		}
+		ctx.JobMgr.Shutdown()
+	}
+	os.Exit(code)
 	return nil
 }

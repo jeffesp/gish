@@ -650,6 +650,38 @@ func TestSourceNoArgs(t *testing.T) {
 	}
 }
 
+func TestJSJobAPI(t *testing.T) {
+	var out bytes.Buffer
+	jm := NewJobManager()
+	ctx := &ExecCtx{In: strings.NewReader(""), Out: &out, ErrOut: &out, JobMgr: jm}
+	InitScripting(ctx)
+
+	value, err := jsVM.RunString(`gish.bg("printf", ["hello"])`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := jm.GetJob(int(value.ToInteger()))
+	if job == nil {
+		t.Fatal("background job was not registered")
+	}
+	waitForJob(t, job)
+
+	value, err = jsVM.RunString(`gish.jobOutput(1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(value.String(), "hello") {
+		t.Fatalf("job output=%q", value.String())
+	}
+	value, err = jsVM.RunString(`gish.jobs().length`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.ToInteger() != 1 {
+		t.Fatalf("jobs length=%d", value.ToInteger())
+	}
+}
+
 func TestConfigDir(t *testing.T) {
 	// GISH_CONFIG_DIR takes priority
 	t.Setenv("GISH_CONFIG_DIR", "/custom/config")

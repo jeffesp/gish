@@ -101,6 +101,20 @@ func TestParseTokens(t *testing.T) {
 		}
 	})
 
+	t.Run("empty command is error", func(t *testing.T) {
+		_, _, err := parseTokens(nil, "")
+		if err == nil {
+			t.Error("expected error for empty command")
+		}
+	})
+
+	t.Run("bare background operator is error", func(t *testing.T) {
+		_, _, err := parseTokens(mustTokenize(t, "&"), "&")
+		if err == nil {
+			t.Error("expected error for bare background operator")
+		}
+	})
+
 	t.Run("leading pipe is error", func(t *testing.T) {
 		tokens := mustTokenize(t, "| grep foo")
 		_, _, err := parseTokens(tokens, "| grep foo")

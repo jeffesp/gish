@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -61,6 +63,12 @@ func execLine(line string, ctx *ExecCtx) {
 	start := time.Now()
 	code := 0
 
+	// Any command other than `exit` re-arms the running-jobs warning, so an
+	// earlier warning cannot authorise a later exit.
+	if ctx.JobMgr != nil && !isExitCommand(exe) {
+		ctx.JobMgr.ClearExitWarning()
+	}
+
 	if background {
 		if ctx.JobMgr == nil {
 			fmt.Fprintln(ctx.ErrOut, "gish: job control is unavailable")
@@ -75,14 +83,8 @@ func execLine(line string, ctx *ExecCtx) {
 				fmt.Fprintf(ctx.Out, "[%d] started: %s\n", job.ID, job.Command)
 			}
 		}
-	} else if command, ok := exe.(*Command); ok && ctx.JobMgr != nil {
-		if _, builtin := Builtins[command.Name()]; !builtin {
-			_, err := ctx.JobMgr.StartForeground(exe, line, ctx)
-			if err != nil {
-				fmt.Fprintf(ctx.ErrOut, "%v\n", err)
-				code = exitCode(err)
-			}
-		} else if err := exe.Exec(ctx); err != nil {
+	} else if ctx.JobMgr != nil && ctx.Interactive() && runsAsJob(exe) {
+		if _, err := ctx.JobMgr.StartForeground(exe, line, ctx); err != nil {
 			fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 			code = exitCode(err)
 		}
@@ -102,6 +104,60 @@ func execLine(line string, ctx *ExecCtx) {
 		})
 	}
 	notifyCompletedJobs(ctx)
+}
+
+// runsAsJob reports whether an executable should run on its own PTY under the
+// job manager.  Builtins mutate shell state and have to run in-process, but
+// external commands and pipelines alike get a PTY so a full-screen program
+// behaves the same wherever it appears.
+func runsAsJob(exe Executable) bool {
+	switch typed := exe.(type) {
+	case *Pipeline:
+		return true
+	case *Command:
+		_, builtin := Builtins[typed.Name()]
+		return !builtin
+	}
+	return false
+}
+
+func isExitCommand(exe Executable) bool {
+	command, ok := exe.(*Command)
+	return ok && command.Name() == "exit"
+}
+
+// pushbackReader lets the shell hand back input it read but did not consume —
+// the bytes typed after a Ctrl+Z — so the line editor picks them up next
+// instead of them being dropped.
+type pushbackReader struct {
+	mu  sync.Mutex
+	buf []byte
+	src io.Reader
+}
+
+func newPushbackReader(src io.Reader) *pushbackReader {
+	return &pushbackReader{src: src}
+}
+
+func (r *pushbackReader) Push(p []byte) {
+	if len(p) == 0 {
+		return
+	}
+	r.mu.Lock()
+	r.buf = append(r.buf, p...)
+	r.mu.Unlock()
+}
+
+func (r *pushbackReader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	if len(r.buf) > 0 {
+		n := copy(p, r.buf)
+		r.buf = r.buf[n:]
+		r.mu.Unlock()
+		return n, nil
+	}
+	r.mu.Unlock()
+	return r.src.Read(p)
 }
 
 func notifyCompletedJobs(ctx *ExecCtx) {
@@ -124,7 +180,8 @@ func runRawREPL(ctx *ExecCtx) {
 	}
 	defer term.Restore(fd, origState)
 
-	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
+	pushback := newPushbackReader(in)
+	t := term.NewTerminal(readWriter{pushback, ctx.Out}, "gish> ")
 
 	termCtx := &ExecCtx{
 		In:       in,
@@ -132,6 +189,7 @@ func runRawREPL(ctx *ExecCtx) {
 		ErrOut:   t,
 		SystemIO: ctx,
 		JobMgr:   ctx.JobMgr,
+		Pushback: pushback.Push,
 		RestoreTerm: func() func() {
 			term.Restore(fd, origState)
 			return func() { term.MakeRaw(fd) } //nolint:errcheck
@@ -164,6 +222,14 @@ func runRawREPL(ctx *ExecCtx) {
 		t.SetPrompt(JSPrompt())
 		line, err := t.ReadLine()
 		if err != nil {
+			// Ctrl+D leaves through the same gate as `exit`, so it cannot kill
+			// running jobs without the same warning.
+			if errors.Is(err, io.EOF) && termCtx.JobMgr != nil {
+				if running, warn := termCtx.JobMgr.WarnBeforeExit(); warn {
+					fmt.Fprintf(termCtx.ErrOut, "gish: %d running jobs. Press Ctrl+D again to force.\n", running)
+					continue
+				}
+			}
 			break
 		}
 

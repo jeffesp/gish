@@ -27,7 +27,20 @@ func SetCurrentCmd(cmd *exec.Cmd) func() {
 }
 
 func SetupSignals(out io.Writer) {
-	signal.Ignore(syscall.SIGTSTP)
+	// The shell must not suspend when a stray SIGTSTP reaches it.  A handler
+	// that drops the signal does that without ever setting SIG_IGN on the
+	// process: POSIX propagates an ignored disposition across exec, so relying
+	// on signal.Ignore here would leave children unstoppable on any runtime
+	// that does not scrub dispositions before exec.  Go's os/exec does scrub
+	// them, so this is belt-and-braces rather than a fix — see
+	// testdata/badcmds/tstp_probe, which asserts children get SIG_DFL.
+	tstpCh := make(chan os.Signal, 1)
+	signal.Notify(tstpCh, syscall.SIGTSTP)
+	go func() {
+		for range tstpCh {
+		}
+	}()
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGHUP)
 

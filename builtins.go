@@ -121,15 +121,11 @@ func builtinExit(cmd *Command, ctx *ExecCtx) error {
 			return err
 		}
 	}
-	if ctx.JobMgr != nil && ctx.JobMgr.RunningCount() > 0 {
-		ctx.JobMgr.mu.Lock()
-		if !ctx.JobMgr.exitWarned {
-			ctx.JobMgr.exitWarned = true
-			ctx.JobMgr.mu.Unlock()
-			fmt.Fprintf(ctx.ErrOut, "gish: %d running jobs. Use 'exit' again to force.\n", ctx.JobMgr.RunningCount())
+	if ctx.JobMgr != nil {
+		if running, warn := ctx.JobMgr.WarnBeforeExit(); warn {
+			fmt.Fprintf(ctx.ErrOut, "gish: %d running jobs. Use 'exit' again to force.\n", running)
 			return nil
 		}
-		ctx.JobMgr.mu.Unlock()
 		ctx.JobMgr.Shutdown()
 	}
 	os.Exit(code)

@@ -26,7 +26,7 @@ func TestJSInlineEval(t *testing.T) {
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "js"}, {TokenWord, "2+2"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "js"}, {Kind: TokenWord, Value: "2+2"}},
 		Line:   "js 2+2",
 	}
 	if err := builtinJS(cmd, ctx); err != nil {
@@ -45,7 +45,7 @@ func TestJSInlineMultiToken(t *testing.T) {
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "js"}, {TokenWord, "2"}, {TokenWord, "+"}, {TokenWord, "3"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "js"}, {Kind: TokenWord, Value: "2"}, {Kind: TokenWord, Value: "+"}, {Kind: TokenWord, Value: "3"}},
 		Line:   "js 2 + 3",
 	}
 	if err := builtinJS(cmd, ctx); err != nil {
@@ -63,7 +63,7 @@ func TestJSNoArgs(t *testing.T) {
 		In: strings.NewReader(""), Out: &bytes.Buffer{}, ErrOut: &bytes.Buffer{},
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "js"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "js"}},
 		Line:   "js",
 	}
 	if err := builtinJS(cmd, ctx); err == nil {
@@ -78,7 +78,7 @@ func TestJSException(t *testing.T) {
 		In: strings.NewReader(""), Out: &bytes.Buffer{}, ErrOut: &bytes.Buffer{},
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "js"}, {TokenWord, "throw"}, {TokenWord, "new"}, {TokenWord, `Error("boom")`}},
+		Tokens: []Token{{Kind: TokenWord, Value: "js"}, {Kind: TokenWord, Value: "throw"}, {Kind: TokenWord, Value: "new"}, {Kind: TokenWord, Value: `Error("boom")`}},
 		Line:   `js throw new Error("boom")`,
 	}
 	err := builtinJS(cmd, ctx)
@@ -110,7 +110,7 @@ func TestGishRegister(t *testing.T) {
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "greet"}, {TokenWord, "world"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "greet"}, {Kind: TokenWord, Value: "world"}},
 		Line:   "greet world",
 	}
 	if err := fn(cmd, greetCtx); err != nil {
@@ -139,7 +139,7 @@ func TestGishRegisterReturnValue(t *testing.T) {
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "ret"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "ret"}},
 		Line:   "ret",
 	}
 	if err := fn(cmd, retCtx); err != nil {
@@ -466,7 +466,7 @@ func TestLoadInitScript(t *testing.T) {
 		In: strings.NewReader(""), Out: buf, ErrOut: buf,
 	}
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "jshello"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "jshello"}},
 		Line:   "jshello",
 	}
 	if err := fn(cmd, helloCtx); err != nil {
@@ -595,7 +595,7 @@ func TestSourceFile(t *testing.T) {
 
 	buf.Reset()
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "source"}, {TokenWord, path}},
+		Tokens: []Token{{Kind: TokenWord, Value: "source"}, {Kind: TokenWord, Value: path}},
 		Line:   "source " + path,
 	}
 	if err := builtinSource(cmd, ctx); err != nil {
@@ -610,7 +610,7 @@ func TestSourceFileMissing(t *testing.T) {
 	_, ctx := initTestVM(t)
 
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "source"}, {TokenWord, "/nonexistent/file.js"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "source"}, {Kind: TokenWord, Value: "/nonexistent/file.js"}},
 		Line:   "source /nonexistent/file.js",
 	}
 	if err := builtinSource(cmd, ctx); err == nil {
@@ -626,7 +626,7 @@ func TestSourceFileSyntaxError(t *testing.T) {
 	os.WriteFile(path, []byte(`function(`), 0644)
 
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "source"}, {TokenWord, path}},
+		Tokens: []Token{{Kind: TokenWord, Value: "source"}, {Kind: TokenWord, Value: path}},
 		Line:   "source " + path,
 	}
 	err := builtinSource(cmd, ctx)
@@ -642,7 +642,7 @@ func TestSourceNoArgs(t *testing.T) {
 	_, ctx := initTestVM(t)
 
 	cmd := &Command{
-		Tokens: []Token{{TokenWord, "source"}},
+		Tokens: []Token{{Kind: TokenWord, Value: "source"}},
 		Line:   "source",
 	}
 	if err := builtinSource(cmd, ctx); err == nil {

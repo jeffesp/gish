@@ -5,8 +5,38 @@ import (
 	"testing"
 )
 
+// TestExecEscapedSpace runs a command through the full
+// tokenize -> expand -> parse -> exec flow and verifies the escaped space
+// reaches the child as a literal argument character.
+func TestExecEscapedSpace(t *testing.T) {
+	line := `echo a\ b`
+	tokens, err := tokenize(line)
+	if err != nil {
+		t.Fatalf("tokenize: %v", err)
+	}
+	tokens = expandVars(tokens)
+	exe, _, err := parseTokens(tokens, line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	cmd := exe.(*Command)
+
+	out := &strings.Builder{}
+	ctx := &ExecCtx{
+		In:     strings.NewReader(""),
+		Out:    out,
+		ErrOut: &strings.Builder{},
+	}
+	if err := cmd.Exec(ctx); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if got := out.String(); got != "a b\n" {
+		t.Errorf("got %q, want %q", got, "a b\n")
+	}
+}
+
 func TestCommandExecCallsWireCmd(t *testing.T) {
-	cmd := &Command{Tokens: []Token{{TokenWord, "/bin/echo"}, {TokenWord, "hello"}}}
+	cmd := &Command{Tokens: []Token{{Kind: TokenWord, Value: "/bin/echo"}, {Kind: TokenWord, Value: "hello"}}}
 
 	systemOut := &strings.Builder{}
 	systemCtx := &ExecCtx{
@@ -37,8 +67,8 @@ func TestCommandExecCallsWireCmd(t *testing.T) {
 
 func TestPipelineRunsMultipleCommands(t *testing.T) {
 	pipeline := &Pipeline{Stages: []*Command{
-		{Tokens: []Token{{TokenWord, "echo"}, {TokenWord, "hello"}}},
-		{Tokens: []Token{{TokenWord, "cat"}}},
+		{Tokens: []Token{{Kind: TokenWord, Value: "echo"}, {Kind: TokenWord, Value: "hello"}}},
+		{Tokens: []Token{{Kind: TokenWord, Value: "cat"}}},
 	}}
 
 	var restoreCalled, termRawCalled bool

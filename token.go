@@ -19,14 +19,21 @@ const (
 	TokenBackground                    // literal amp - &, only valid at EOL
 )
 
+// Token is a single lexical unit of a command line.
+//
+// Escapes holds the byte offsets within Value that were
+// backslash-escaped in the input. The tokenizer strips the backslashes but
+// records the positions, so later expansion passes leave those bytes
+// literal (a \$HOME is not a variable reference).
 type Token struct {
-	Kind  TokenKind
-	Value string
+	Kind    TokenKind
+	Value   string
+	Escapes []int
 }
 
 func expandToken(t Token) Token {
 	if t.Kind == TokenWord || t.Kind == TokenDoubleQuoted {
-		return Token{Kind: t.Kind, Value: os.Expand(t.Value, expandVar)}
+		return Token{Kind: t.Kind, Value: expandValue(t.Value, t.Escapes)}
 	}
 	return t
 }
@@ -41,6 +48,94 @@ func expandVar(key string) string {
 	return os.Getenv(key)
 }
 
+// expandValue expands $var and ${var} references in value, mirroring
+// os.Expand, except that bytes at positions in escapes are left literal:
+// a backslash-escaped $ does not begin a variable reference.
+//
+// Tokens without escapes go through os.Expand directly, so behavior is
+// byte-for-byte the standard library's for all unescaped input.
+func expandValue(value string, escapes []int) string {
+	if len(escapes) == 0 {
+		return os.Expand(value, expandVar)
+	}
+	mask := make([]bool, len(value))
+	for _, e := range escapes {
+		if e >= 0 && e < len(value) {
+			mask[e] = true
+		}
+	}
+
+	var buf []byte
+	i := 0
+	for j := 0; j < len(value); j++ {
+		if value[j] == '$' && !mask[j] && j+1 < len(value) {
+			if buf == nil {
+				buf = make([]byte, 0, 2*len(value))
+			}
+			buf = append(buf, value[i:j]...)
+			name, w := shellName(value[j+1:])
+			if name == "" && w > 0 {
+				// Invalid syntax (e.g. a dangling ${): eat the
+				// characters, as os.Expand does.
+			} else if name == "" {
+				// $ not followed by a name; leave the dollar sign untouched.
+				buf = append(buf, value[j])
+			} else {
+				buf = append(buf, expandVar(name)...)
+			}
+			j += w
+			i = j + 1
+		}
+	}
+	if buf == nil {
+		return value
+	}
+	return string(buf) + value[i:]
+}
+
+// shellName returns the variable name beginning at s and the number of
+// bytes consumed to extract it. Copied from the os package's unexported
+// getShellName so expandValue matches os.Expand exactly.
+func shellName(s string) (string, int) {
+	switch {
+	case s[0] == '{':
+		if len(s) > 2 && shellSpecialVar(s[1]) && s[2] == '}' {
+			return s[1:2], 3
+		}
+		// Scan to closing brace
+		for i := 1; i < len(s); i++ {
+			if s[i] == '}' {
+				if i == 1 {
+					return "", 2 // Bad syntax; eat "${}"
+				}
+				return s[1:i], i + 1
+			}
+		}
+		return "", 1 // Bad syntax; eat "${"
+	case shellSpecialVar(s[0]):
+		return s[0:1], 1
+	}
+	// Scan alphanumerics.
+	var i int
+	for i = 0; i < len(s) && isAlphaNum(s[i]); i++ {
+	}
+	return s[:i], i
+}
+
+// shellSpecialVar and isAlphaNum are copies of the os package predicates
+// used by getShellName.
+func shellSpecialVar(c uint8) bool {
+	switch c {
+	case '*', '#', '$', '@', '!', '?', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		return true
+	}
+	return false
+}
+
+func isAlphaNum(c uint8) bool {
+	return c == '_' || '0' <= c && c <= '9' || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
+}
+
 func expandVars(tokens []Token) []Token {
 	out := make([]Token, len(tokens))
 	for i, t := range tokens {
@@ -52,7 +147,10 @@ func expandVars(tokens []Token) []Token {
 func expandGlobs(tokens []Token) []Token {
 	var out []Token
 	for _, t := range tokens {
-		if t.Kind == TokenWord {
+		// A word containing backslash-escaped characters is a literal
+		// filename, never a pattern, matching bash (f\*.txt does not
+		// glob).
+		if t.Kind == TokenWord && len(t.Escapes) == 0 {
 			res, err := filepath.Glob(t.Value)
 			if err != nil || len(res) == 0 {
 				out = append(out, t)
@@ -69,12 +167,11 @@ func expandGlobs(tokens []Token) []Token {
 				if !includeDot && len(base) > 0 && base[0] == '.' {
 					continue
 				}
-				out = append(out, Token{TokenWord, val})
+				out = append(out, Token{Kind: TokenWord, Value: val})
 			}
 		} else {
 			out = append(out, t)
 		}
-
 	}
 	return out
 }
@@ -82,13 +179,42 @@ func expandGlobs(tokens []Token) []Token {
 func tokenize(line string) ([]Token, error) {
 	var tokens []Token
 	var cur strings.Builder
+	var escapes []int
 	inQuote := false
 	quoteChar := byte(0)
 	curKind := TokenWord
 
+	// emit appends the token being built and resets the builder.
+	// escapes is reassigned rather than reset in place so the slice
+	// stored in the emitted token isn't aliased by later appends.
+	emit := func() {
+		if cur.Len() > 0 {
+			tokens = append(tokens, Token{Kind: curKind, Value: cur.String(), Escapes: escapes})
+		}
+		cur.Reset()
+		escapes = nil
+		curKind = TokenWord
+	}
+
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 		switch {
+		case !inQuote && ch == '\\':
+			// A backslash escapes the next character, making it
+			// literal: it can't open a quote, be an operator, or start
+			// a $variable.
+			if i+1 < len(line) {
+				i++
+				curKind = TokenWord
+				cur.WriteByte(line[i])
+				escapes = append(escapes, cur.Len()-1)
+			} else {
+				// Trailing backslash at end of line: kept as a literal
+				// for now; this becomes line continuation once
+				// multi-line input exists.
+				curKind = TokenWord
+				cur.WriteByte('\\')
+			}
 		case !inQuote && (ch == '\'' || ch == '"'):
 			if cur.Len() == 0 {
 				if ch == '\'' {
@@ -101,28 +227,28 @@ func tokenize(line string) ([]Token, error) {
 			}
 			inQuote = true
 			quoteChar = ch
+		case inQuote && quoteChar == '"' && ch == '\\' && i+1 < len(line) &&
+			(line[i+1] == '"' || line[i+1] == '$' || line[i+1] == '\\'):
+			// Inside double quotes, a backslash is special only before
+			// ", $, and itself (bash parity); elsewhere it is a plain
+			// character.
+			i++
+			cur.WriteByte(line[i])
+			escapes = append(escapes, cur.Len()-1)
 		case inQuote && ch == quoteChar:
 			inQuote = false
 		case !inQuote && (ch == ' ' || ch == '\t'):
-			if cur.Len() > 0 {
-				tokens = append(tokens, Token{curKind, cur.String()})
-				cur.Reset()
-				curKind = TokenWord
-			}
+			emit()
 		case !inQuote && ch == '|':
-			if cur.Len() > 0 {
-				tokens = append(tokens, Token{curKind, cur.String()})
-				cur.Reset()
-				curKind = TokenWord
-			}
+			emit()
 			if i < len(line)-1 && line[i+1] == '&' {
 				i = i + 1
-				tokens = append(tokens, Token{TokenMergePipe, "|&"})
+				tokens = append(tokens, Token{Kind: TokenMergePipe, Value: "|&"})
 			} else {
-				tokens = append(tokens, Token{TokenPipe, string(ch)})
+				tokens = append(tokens, Token{Kind: TokenPipe, Value: string(ch)})
 			}
 		case !inQuote && ch == '&' && i == len(line)-1:
-			tokens = append(tokens, Token{TokenBackground, "&"})
+			tokens = append(tokens, Token{Kind: TokenBackground, Value: "&"})
 		default:
 			if !inQuote {
 				curKind = TokenWord
@@ -133,10 +259,7 @@ func tokenize(line string) ([]Token, error) {
 	if inQuote {
 		return nil, fmt.Errorf("unclosed quote")
 	}
-	// close out last token
-	if cur.Len() > 0 {
-		tokens = append(tokens, Token{curKind, cur.String()})
-	}
+	emit()
 	return tokens, nil
 }
 

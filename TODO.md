@@ -21,10 +21,6 @@ command.go:92-104 — The `pr` (read end of the pipe) created for each intermedi
 
 scripting.go:354-355 — `currentDir` is used in a `defer os.Chdir(currentDir)` but the `err` from `os.Getwd()` is only printed, not returned. If `Getwd` fails (deleted cwd), the deferred Chdir will silently fail, leaving the shell in the config dir.
 
-### No escape character support in tokenizer
-
-token.go — There's no handling of backslash escapes (`\"`, `\ `, `\\`). This means you can't include a literal quote inside a same-type quoted string, and you can't escape spaces in unquoted words. This is a significant usability gap for a shell.
-
 ### Terminal title escape injection
 
 builtins.go:108 / scripting.go:169 — The `title` builtin and `gish.title()` write user-supplied text directly into an OSC escape sequence without sanitizing control characters. A string containing `\007` or other escape sequences could inject arbitrary terminal control codes.

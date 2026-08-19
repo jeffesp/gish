@@ -214,7 +214,7 @@ func TestBuiltinHistoryWithLimit(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := builtinHistory(testCmd([]Token{{TokenWord, "3"}}), testCtx(&buf)); err != nil {
+	if err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "3"}}), testCtx(&buf)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -248,7 +248,7 @@ func TestBuiltinHistorySince(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCmd([]Token{{TokenWord, "--since"}, {TokenWord, "2026-04-01"}}), testCtx(&buf))
+	err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--since"}, {Kind: TokenWord, Value: "2026-04-01"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestBuiltinHistoryUntil(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCmd([]Token{{TokenWord, "--until"}, {TokenWord, "2026-03-01"}}), testCtx(&buf))
+	err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--until"}, {Kind: TokenWord, Value: "2026-03-01"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestBuiltinHistoryOkAndFail(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCmd([]Token{{TokenWord, "--ok"}}), testCtx(&buf))
+	err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--ok"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("--ok: unexpected error: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestBuiltinHistoryOkAndFail(t *testing.T) {
 	}
 
 	buf.Reset()
-	err = builtinHistory(testCmd([]Token{{TokenWord, "--fail"}}), testCtx(&buf))
+	err = builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--fail"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("--fail: unexpected error: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestBuiltinHistoryOkFailMutuallyExclusive(t *testing.T) {
 	defer cleanup()
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCmd([]Token{{TokenWord, "--ok"}, {TokenWord, "--fail"}}), testCtx(&buf))
+	err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--ok"}, {Kind: TokenWord, Value: "--fail"}}), testCtx(&buf))
 	if err == nil {
 		t.Error("expected error for --ok --fail together")
 	}
@@ -363,7 +363,7 @@ func TestBuiltinHistoryDirFilter(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	err := builtinHistory(testCmd([]Token{{TokenWord, "--dir"}, {TokenWord, "gish"}}), testCtx(&buf))
+	err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--dir"}, {Kind: TokenWord, Value: "gish"}}), testCtx(&buf))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -398,9 +398,9 @@ func TestBuiltinHistoryCombinedFilters(t *testing.T) {
 
 	var buf bytes.Buffer
 	args := []Token{
-		{TokenWord, "--since"}, {TokenWord, "2026-04-01"},
-		{TokenWord, "--fail"},
-		{TokenWord, "--dir"}, {TokenWord, "/project"},
+		{Kind: TokenWord, Value: "--since"}, {Kind: TokenWord, Value: "2026-04-01"},
+		{Kind: TokenWord, Value: "--fail"},
+		{Kind: TokenWord, Value: "--dir"}, {Kind: TokenWord, Value: "/project"},
 	}
 	err := builtinHistory(testCmd(args), testCtx(&buf))
 	if err != nil {
@@ -437,6 +437,25 @@ func TestTermHistorySeeding(t *testing.T) {
 	}
 	if got := h.At(4); got != "cmd 0" {
 		t.Errorf("At(4) = %q, want %q", got, "cmd 0")
+	}
+}
+
+// TestTermHistoryAtBounds verifies At returns "" for out-of-range
+// indices instead of panicking: previously idx == Len() indexed
+// entries at -1.
+func TestTermHistoryAtBounds(t *testing.T) {
+	h := &termHistory{entries: []string{"old", "new"}}
+	if got := h.At(0); got != "new" {
+		t.Errorf("At(0) = %q, want %q", got, "new")
+	}
+	if got := h.At(1); got != "old" {
+		t.Errorf("At(1) = %q, want %q", got, "old")
+	}
+	if got := h.At(2); got != "" {
+		t.Errorf("At(2) = %q, want empty (idx == Len)", got)
+	}
+	if got := h.At(-1); got != "" {
+		t.Errorf("At(-1) = %q, want empty", got)
 	}
 }
 
@@ -570,14 +589,14 @@ func TestBuiltinHistoryBadArgs(t *testing.T) {
 		name string
 		args []Token
 	}{
-		{"negative N", []Token{{TokenWord, "-5"}}},
-		{"zero N", []Token{{TokenWord, "0"}}},
-		{"non-numeric N", []Token{{TokenWord, "abc"}}},
-		{"since no value", []Token{{TokenWord, "--since"}}},
-		{"until no value", []Token{{TokenWord, "--until"}}},
-		{"dir no value", []Token{{TokenWord, "--dir"}}},
-		{"since bad date", []Token{{TokenWord, "--since"}, {TokenWord, "not-a-date"}}},
-		{"unknown flag", []Token{{TokenWord, "--bogus"}}},
+		{"negative N", []Token{{Kind: TokenWord, Value: "-5"}}},
+		{"zero N", []Token{{Kind: TokenWord, Value: "0"}}},
+		{"non-numeric N", []Token{{Kind: TokenWord, Value: "abc"}}},
+		{"since no value", []Token{{Kind: TokenWord, Value: "--since"}}},
+		{"until no value", []Token{{Kind: TokenWord, Value: "--until"}}},
+		{"dir no value", []Token{{Kind: TokenWord, Value: "--dir"}}},
+		{"since bad date", []Token{{Kind: TokenWord, Value: "--since"}, {Kind: TokenWord, Value: "not-a-date"}}},
+		{"unknown flag", []Token{{Kind: TokenWord, Value: "--bogus"}}},
 	}
 
 	for _, c := range cases {

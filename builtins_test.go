@@ -22,7 +22,7 @@ func testCtx(out io.Writer) *ExecCtx {
 }
 
 func testCmd(args []Token) *Command {
-	tokens := append([]Token{{TokenWord, "test"}}, args...)
+	tokens := append([]Token{{Kind: TokenWord, Value: "test"}}, args...)
 	return &Command{Tokens: tokens, Line: ""}
 }
 

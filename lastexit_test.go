@@ -32,11 +32,11 @@ func TestExpandDollarQuestion(t *testing.T) {
 		input Token
 		want  string
 	}{
-		{"bare", Token{TokenWord, "$?"}, "42"},
-		{"braced", Token{TokenWord, "${?}"}, "42"},
-		{"embedded", Token{TokenWord, "code-$?"}, "code-42"},
-		{"double quoted", Token{TokenDoubleQuoted, "$?"}, "42"},
-		{"single quoted does not expand", Token{TokenSingleQuoted, "$?"}, "$?"},
+		{"bare", Token{Kind: TokenWord, Value: "$?"}, "42"},
+		{"braced", Token{Kind: TokenWord, Value: "${?}"}, "42"},
+		{"embedded", Token{Kind: TokenWord, Value: "code-$?"}, "code-42"},
+		{"double quoted", Token{Kind: TokenDoubleQuoted, Value: "$?"}, "42"},
+		{"single quoted does not expand", Token{Kind: TokenSingleQuoted, Value: "$?"}, "$?"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

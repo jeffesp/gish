@@ -61,6 +61,7 @@ func execLine(line string, ctx *ExecCtx) {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		code = exitCode(err)
 	}
+	recordExitCode(code)
 
 	if !skipHistory {
 		appendHistory(HistoryEntry{

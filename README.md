@@ -76,6 +76,21 @@ history [N] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
 
 `DATE` format: `YYYY-MM-DD` (parsed as local midnight). `--ok` and `--fail` are mutually exclusive.
 
+## Last Exit Code
+
+After each command runs, its exit code is available in three places:
+
+- `$?` (or `${?}`) expands to it on the next line, like classic shells:
+
+  ```
+  gish> false
+  gish> echo $?
+  1
+  ```
+
+- `$GISH_LASTEXIT` holds the same value in the environment passed to spawned child processes.
+- `gish.lastExitCode()` returns the same value from JavaScript.
+
 ## Scripting
 
 `gish` embeds a JavaScript runtime ([goja](https://github.com/dop251/goja)) so you can define custom commands in JS. At startup, gish loads `init.js` from its config directory. The config directory is resolved in order: `$GISH_CONFIG_DIR`, `$XDG_CONFIG_HOME/gish`, or `~/.config/gish`.
@@ -121,6 +136,9 @@ gish.env.all(); // returns {KEY: "val", ...}
 
 // Current working directory
 gish.cwd();
+
+// Exit code of the most recently run command
+gish.lastExitCode();
 
 // Output
 gish.print("no newline");

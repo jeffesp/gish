@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -25,9 +26,19 @@ type Token struct {
 
 func expandToken(t Token) Token {
 	if t.Kind == TokenWord || t.Kind == TokenDoubleQuoted {
-		return Token{Kind: t.Kind, Value: os.ExpandEnv(t.Value)}
+		return Token{Kind: t.Kind, Value: os.Expand(t.Value, expandVar)}
 	}
 	return t
+}
+
+// expandVar resolves $VAR and ${VAR} during token expansion, matching the
+// behavior of os.ExpandEnv. $?, like in classic shells, resolves to the
+// exit code of the most recently executed command.
+func expandVar(key string) string {
+	if key == "?" {
+		return strconv.Itoa(lastExitCode)
+	}
+	return os.Getenv(key)
 }
 
 func expandVars(tokens []Token) []Token {

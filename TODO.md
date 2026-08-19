@@ -43,10 +43,6 @@ scripting_test.go — Tests call `InitScripting` which replaces the global `jsVM
 
 ## Missing Features (acknowledged in README/plans)
 
-### No $? / last exit code
-
-There's no way to access the previous command's exit code from the shell or from JS scripts. The history records it, but it's not exposed as an env var or gish.lastExitCode.
-
 ### No ~ in cd
 
 Probably need to support it not only for `cd`, but that is where I have noticed it most.

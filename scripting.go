@@ -177,6 +177,11 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return goja.Undefined()
 	})
 
+	// gish.lastExitCode()
+	gishObj.Set("lastExitCode", func(call goja.FunctionCall) goja.Value {
+		return vm.ToValue(lastExitCode)
+	})
+
 	// gish.cwd()
 	gishObj.Set("cwd", func(call goja.FunctionCall) goja.Value {
 		dir, err := os.Getwd()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,11 +32,17 @@ func (cmd *Command) Name() string {
 	return cmd.Tokens[0].Value
 }
 
-func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
+// Start launches the command and returns two functions:
+//
+//   - wait blocks until the command finishes and returns its result
+//   - kill terminates a still-running command; it is a no-op for builtins
+//     (their goroutines cannot be interrupted) and for stages that have
+//     already finished
+func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 	if fn, ok := Builtins[c.Name()]; ok {
 		done := make(chan error, 1)
 		go func() { done <- fn(c, ctx) }()
-		return func() error { return <-done }
+		return func() error { return <-done }, func() {}
 	}
 
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
@@ -46,12 +53,18 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error) {
 	cmd.Stderr = ctx.ErrOut
 	if err := cmd.Start(); err != nil {
 		clearCmd()
-		return func() error { return err }
+		return func() error { return err }, func() {}
 	}
 	return func() error {
-		defer clearCmd()
-		return cmd.Wait()
-	}
+			defer clearCmd()
+			return cmd.Wait()
+		}, func() {
+			if cmd.Process != nil {
+				// Failure is fine: the process may have exited in the
+				// meantime; either way Wait() reaps it.
+				cmd.Process.Kill() //nolint:errcheck
+			}
+		}
 }
 
 func (c *Command) Exec(ctx *ExecCtx) error {
@@ -75,24 +88,47 @@ type Pipeline struct {
 	MergeErr []bool
 }
 
+// pipelineStageError identifies which pipeline stage failed. It unwraps to
+// the stage's own error, so exitCode() still extracts the process exit code
+// (via errors.As) for $?.
+type pipelineStageError struct {
+	stage   int
+	command string
+	cause   error
+}
+
+func (e *pipelineStageError) Error() string {
+	return fmt.Sprintf("pipeline stage %d (%s): %v", e.stage, e.command, e.cause)
+}
+
+func (e *pipelineStageError) Unwrap() error {
+	return e.cause
+}
+
+type pipelineStage struct {
+	wait func() error
+	kill func()
+}
+
 func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	if ctx.RestoreTerm != nil {
 		reenter := ctx.RestoreTerm()
 		defer reenter()
 	}
 
-	waits := make([]func() error, len(p.Stages))
+	stages := make([]pipelineStage, len(p.Stages))
 	var nextIn io.Reader = ctx.In
-	for i, stage := range p.Stages {
+	for i, cmd := range p.Stages {
 		localCtx := &ExecCtx{
 			In:     nextIn,
 			ErrOut: ctx.ErrOut,
 		}
+		var pr, pw *os.File
 		if i == len(p.Stages)-1 {
 			localCtx.Out = ctx.Out
-			waits[i] = stage.Start(localCtx)
 		} else {
-			pr, pw, err := os.Pipe()
+			var err error
+			pr, pw, err = os.Pipe()
 			if err != nil {
 				return fmt.Errorf("unable to create pipe: %v", err)
 			}
@@ -102,25 +138,82 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 				localCtx.ErrOut = pw
 			}
 			nextIn = pr
-			wait := stage.Start(localCtx)
-			waits[i] = func() error {
-				err := wait()
+		}
+
+		wait, kill := cmd.Start(localCtx)
+		if pw != nil {
+			// Close the write end when the stage finishes so the
+			// downstream stage receives EOF. (Capture wait in inner
+			// first — the closure must not refer to itself.)
+			inner := wait
+			wait = func() error {
+				err := inner()
 				pw.Close()
 				return err
 			}
 		}
+		stages[i] = pipelineStage{wait: wait, kill: kill}
 	}
 
-	errs := make([]error, len(waits))
-	var wg sync.WaitGroup
-	for i, fun := range waits {
-		wg.Add(1)
-		go func(i int, fun func() error) {
-			errs[i] = fun()
-			wg.Done()
-		}(i, fun)
+	// All stages run concurrently (required — the pipe buffer is finite).
+	// The first failure kills every still-running stage, so the pipeline
+	// doesn't drain on a failed early stage and a stage blocked on input
+	// (e.g. `cat | badcmd`, where `cat` waits for the terminal) can't
+	// hold the pipeline open. Builtin stages can't be killed — their
+	// goroutines aren't interruptible — but they exit on EOF once the
+	// stage feeding them dies.
+	errs := make([]error, len(stages))
+	done := make(chan int, len(stages))
+	var (
+		mu     sync.Mutex
+		alive  = make([]bool, len(stages))
+		killed = make([]bool, len(stages))
+	)
+	for i := range alive {
+		alive[i] = true
 	}
-	wg.Wait()
+	for i := range stages {
+		go func(i int) {
+			errs[i] = stages[i].wait()
+			mu.Lock()
+			alive[i] = false
+			if errs[i] != nil {
+				for j := range alive {
+					if alive[j] {
+						alive[j] = false
+						killed[j] = true
+						stages[j].kill()
+					}
+				}
+			}
+			mu.Unlock()
+			done <- i
+		}(i)
+	}
+	for range stages {
+		<-done
+	}
 
-	return errs[len(waits)-1]
+	// Surface every stage that failed on its own. Stages we killed after
+	// the first failure only report "killed" as a consequence of that
+	// failure — including them would add noise and would skew $? (a
+	// signal-killed process reports exit code -1).
+	var failed []error
+	for i, err := range errs {
+		if err == nil || killed[i] {
+			continue
+		}
+		failed = append(failed, &pipelineStageError{
+			stage:   i,
+			command: p.Stages[i].Name(),
+			cause:   err,
+		})
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+	if len(failed) == 1 {
+		return failed[0]
+	}
+	return errors.Join(failed...)
 }

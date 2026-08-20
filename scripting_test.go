@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -329,6 +330,9 @@ func TestGishCwd(t *testing.T) {
 }
 
 func TestGishSpawn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows command-line quoting mangles embedded newlines in arguments")
+	}
 	buf, _ := initTestVM(t)
 	buf.Reset()
 

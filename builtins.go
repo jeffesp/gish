@@ -59,6 +59,10 @@ func builtinCd(cmd *Command, ctx *ExecCtx) error {
 	switch len(args) {
 	case 0:
 		dir = os.Getenv("HOME")
+		if dir == "" {
+			// Windows (and some minimal environments) do not set HOME.
+			dir, _ = os.UserHomeDir()
+		}
 	case 1:
 		if args[0].Value == "-" {
 			dir = os.Getenv("OLDPWD")

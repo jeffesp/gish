@@ -129,7 +129,16 @@ func TestBuiltinCdHome(t *testing.T) {
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
 
+	// Same resolution the builtin uses: $HOME, falling back to the
+	// platform user home (Windows does not set HOME).
 	home := os.Getenv("HOME")
+	if home == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			t.Skipf("cannot resolve user home: %v", err)
+		}
+		home = h
+	}
 	var buf bytes.Buffer
 	if err := builtinCd(testCmd(words()), testCtx(&buf)); err != nil {
 		t.Fatalf("cd home: unexpected error: %v", err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -36,7 +37,13 @@ func TestExecEscapedSpace(t *testing.T) {
 }
 
 func TestCommandExecCallsWireCmd(t *testing.T) {
-	cmd := &Command{Tokens: []Token{{Kind: TokenWord, Value: "/bin/echo"}, {Kind: TokenWord, Value: "hello"}}}
+	// Resolve echo via PATH: on Windows there is no /bin/echo, but Git
+	// for Windows ships an echo.exe.
+	echoPath, err := exec.LookPath("echo")
+	if err != nil {
+		t.Skipf("no echo in PATH: %v", err)
+	}
+	cmd := &Command{Tokens: []Token{{Kind: TokenWord, Value: echoPath}, {Kind: TokenWord, Value: "hello"}}}
 
 	systemOut := &strings.Builder{}
 	systemCtx := &ExecCtx{

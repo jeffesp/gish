@@ -221,3 +221,20 @@ d517494 Don't exit on signals
 5e47c92 add exec context
 1725224 add history implementation
 ```
+
+## Building
+
+```
+go build -o gish .
+```
+
+The version string defaults to `dev` and can be stamped at build time:
+
+```
+go build -trimpath -ldflags "-s -w -X main.Version=v1.0.0" -o gish .
+gish --version   # or gish -v
+```
+
+The GitHub Actions release workflow (`.github/workflows/release.yml`) builds static binaries for
+linux/darwin/windows on amd64 and arm64 when a `v*` tag is pushed, and attaches the archives
+plus `SHA256SUMS.txt` to the release.

@@ -17,10 +17,6 @@ scripting.go:16 — InitScripting replaces the global jsVM on every call. Any bu
 
 command.go:92-104 — The `pr` (read end of the pipe) created for each intermediate stage is passed as the next stage's stdin but never closed. The downstream process's exit closes its stdin handle, so in practice the fd is reclaimed, but it leaks if a stage fails before reading. Explicit `defer pr.Close()` after the stage that reads from it would be defensive.
 
-### loadInitScript defers os.Chdir with a potentially-invalid path
-
-scripting.go:354-355 — `currentDir` is used in a `defer os.Chdir(currentDir)` but the `err` from `os.Getwd()` is only printed, not returned. If `Getwd` fails (deleted cwd), the deferred Chdir will silently fail, leaving the shell in the config dir.
-
 ### Terminal title escape injection
 
 builtins.go:108 / scripting.go:169 — The `title` builtin and `gish.title()` write user-supplied text directly into an OSC escape sequence without sanitizing control characters. A string containing `\007` or other escape sequences could inject arbitrary terminal control codes.

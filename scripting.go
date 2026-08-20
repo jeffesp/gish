@@ -373,10 +373,13 @@ func configDir() string {
 func loadInitScript(vm *goja.Runtime, ctx *ExecCtx) {
 	// save current dir and change to config dir for relative path references to work
 	currentDir, err := os.Getwd()
-	defer os.Chdir(currentDir)
 	if err != nil {
+		// Cannot restore the directory later (e.g., the cwd was deleted),
+		// so bail out instead of chdir-ing to the config dir.
 		fmt.Fprintln(ctx.ErrOut, "gish: unable to get current dir")
+		return
 	}
+	defer os.Chdir(currentDir)
 	dir := configDir()
 	if dir == "" {
 		return

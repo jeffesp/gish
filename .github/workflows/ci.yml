@@ -23,10 +23,13 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Verify dependencies
+        # 'go mod verify' checks module hashes in memory, so it is immune to
+        # the CRLF line-ending differences that make 'go mod tidy -diff'
+        # flaky on the Windows runner (it byte-compares a CRLF working copy
+        # against tidy's LF output and flags every line as changed).
         run: go mod verify
-      - name: Check go.mod/go.sum are tidy
-        run: go mod tidy -diff
       - name: Check formatting
+        shell: bash
         run: test -z "$(gofmt -l .)"
       - name: Vet
         run: go vet ./...

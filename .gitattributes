@@ -1,0 +1,11 @@
+# Enforce LF in the repository and on every platform. Without this,
+# autocrlf on Windows checks out CRLF copies, which makes line-ending
+# sensitive tools (gofmt -l, go mod tidy -diff) fail or flake.
+* text=auto eol=lf
+
+*.exe binary
+*.zip binary
+*.tar.gz binary
+*.png binary
+*.jpg binary
+*.ico binary

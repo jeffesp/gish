@@ -9,10 +9,6 @@ scripting.go:16 — InitScripting replaces the global jsVM on every call. Any bu
 
 ### gish.source requires absolute paths to the files
 
-### Pipe read-side is never explicitly closed
-
-command.go:92-104 — The `pr` (read end of the pipe) created for each intermediate stage is passed as the next stage's stdin but never closed. The downstream process's exit closes its stdin handle, so in practice the fd is reclaimed, but it leaks if a stage fails before reading. Explicit `defer pr.Close()` after the stage that reads from it would be defensive.
-
 ### Terminal title escape injection
 
 builtins.go:108 / scripting.go:169 — The `title` builtin and `gish.title()` write user-supplied text directly into an OSC escape sequence without sanitizing control characters. A string containing `\007` or other escape sequences could inject arbitrary terminal control codes.

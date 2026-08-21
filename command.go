@@ -118,6 +118,7 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 
 	stages := make([]pipelineStage, len(p.Stages))
 	var nextIn io.Reader = ctx.In
+	var prevPR *os.File // read end of the previous pipe — this stage's stdin
 	for i, cmd := range p.Stages {
 		localCtx := &ExecCtx{
 			In:     nextIn,
@@ -141,17 +142,30 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 		}
 
 		wait, kill := cmd.Start(localCtx)
-		if pw != nil {
-			// Close the write end when the stage finishes so the
-			// downstream stage receives EOF. (Capture wait in inner
+		if pw != nil || prevPR != nil {
+			// Close the pipe ends the parent still holds once the
+			// stage that owns them finishes: pw (this stage's stdout)
+			// so the next stage receives EOF, and prevPR (this stage's
+			// stdin) so the read end of the previous pipe isn't held
+			// open for the rest of the session. (Capture wait in inner
 			// first — the closure must not refer to itself.)
+			closers := make([]io.Closer, 0, 2)
+			if pw != nil {
+				closers = append(closers, pw)
+			}
+			if prevPR != nil {
+				closers = append(closers, prevPR)
+			}
 			inner := wait
 			wait = func() error {
 				err := inner()
-				pw.Close()
+				for _, c := range closers {
+					c.Close() //nolint:errcheck
+				}
 				return err
 			}
 		}
+		prevPR = pr
 		stages[i] = pipelineStage{wait: wait, kill: kill}
 	}
 

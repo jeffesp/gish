@@ -46,6 +46,7 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 	}
 
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
+	setNewProcessGroup(cmd)
 	clearCmd := SetCurrentCmd(cmd)
 
 	cmd.Stdin = ctx.In
@@ -59,11 +60,11 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 			defer clearCmd()
 			return cmd.Wait()
 		}, func() {
-			if cmd.Process != nil {
-				// Failure is fine: the process may have exited in the
-				// meantime; either way Wait() reaps it.
-				cmd.Process.Kill() //nolint:errcheck
-			}
+			// Kills the whole process group, not just cmd's own pid: a
+			// stage like "sh -c '...'" may fork children that inherit
+			// this stage's pipe fds, and killing only the shell leaves
+			// them running and holding those fds open.
+			killProcessGroup(cmd)
 		}
 }
 

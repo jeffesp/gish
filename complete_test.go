@@ -194,3 +194,39 @@ func TestCompleteLineQuoted(t *testing.T) {
 		t.Errorf("completeLine(%q) = (%q, %d, %v), want (%q, _, true)", line, gotLine, gotPos, gotOK, wantLine)
 	}
 }
+
+func TestCompleteLineDirOnlyCommand(t *testing.T) {
+	withTempDir(t, "pfile.txt", "proj/")
+
+	// Plain arg completion sees both the file and the directory, so the
+	// common prefix is just "p" — nothing new to insert.
+	if line, _, ok := completeLine("cat p", 5, '\t'); ok {
+		t.Errorf(`completeLine("cat p") = (%q, _, true), want ok=false (ambiguous)`, line)
+	}
+
+	// cd is dir-only, so the file is filtered out and "proj/" is unique.
+	gotLine, gotPos, ok := completeLine("cd p", 4, '\t')
+	wantLine := "cd proj/"
+	if !ok || gotLine != wantLine {
+		t.Errorf(`completeLine("cd p") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
+	}
+}
+
+func TestCommandForWord(t *testing.T) {
+	cases := []struct {
+		line string
+		pos  int
+		want string
+	}{
+		{"cd p", 4, "cd"},
+		{"p", 1, ""},
+		{"cat file.out | grep f", 22, "grep"},
+		{"cd  ", 4, "cd"},
+	}
+	for _, c := range cases {
+		w := wordAtCursor(c.line, c.pos)
+		if got := commandForWord(c.line, w); got != c.want {
+			t.Errorf("commandForWord(%q, word at %d) = %q, want %q", c.line, c.pos, got, c.want)
+		}
+	}
+}

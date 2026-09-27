@@ -159,6 +159,52 @@ func isDirEntry(dir string, e os.DirEntry) bool {
 	return err == nil && info.IsDir()
 }
 
+// dirOnlyCommands lists commands whose arguments should only complete to
+// directories (files are filtered out of the candidate list). Edit this
+// map to add more.
+var dirOnlyCommands = map[string]bool{
+	"cd": true,
+}
+
+// fileOnlyCommands lists commands whose arguments should only complete to
+// plain files (directories are filtered out of the candidate list). Edit
+// this map to add more.
+var fileOnlyCommands = map[string]bool{}
+
+// commandForWord returns the command name w belongs to: the first word of
+// the current pipeline segment (the tokens since the last unquoted "|" or
+// "|&", or since the start of the line). Returns "" if w is itself in
+// command position, i.e. there is no command yet to look up.
+func commandForWord(line string, w word) string {
+	tokens, err := tokenize(line[:w.Start])
+	if err != nil {
+		return ""
+	}
+
+	segStart := 0
+	for i, t := range tokens {
+		if t.Kind == TokenPipe || t.Kind == TokenMergePipe {
+			segStart = i + 1
+		}
+	}
+	if segStart >= len(tokens) {
+		return ""
+	}
+	return tokens[segStart].Value
+}
+
+// filterEntries keeps only the fileCandidates results that are
+// directories (keepDirs true) or that are not (keepDirs false).
+func filterEntries(matches []string, keepDirs bool) []string {
+	var out []string
+	for _, m := range matches {
+		if strings.HasSuffix(m, string(filepath.Separator)) == keepDirs {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // commonPrefix returns the longest byte-string prefix shared by every
 // element of matches, trimmed back to a full rune if it would otherwise
 // split one in the middle.
@@ -246,6 +292,14 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 
 	w := wordAtCursor(line, pos)
 	matches := fileCandidates(w.Text)
+
+	switch cmd := commandForWord(line, w); {
+	case dirOnlyCommands[cmd]:
+		matches = filterEntries(matches, true)
+	case fileOnlyCommands[cmd]:
+		matches = filterEntries(matches, false)
+	}
+
 	if len(matches) == 0 {
 		return "", 0, false
 	}

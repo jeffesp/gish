@@ -117,17 +117,28 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 		defer reenter()
 	}
 
+	// Resolve the real endpoints a stage should connect to when it isn't
+	// piped to another stage. ctx.In/Out may be wrapped (e.g. the raw-mode
+	// REPL's term.Terminal, which isn't an *os.File) so that Read/Write go
+	// through terminal bookkeeping; a child process needs the actual fd
+	// behind it — e.g. so isatty() still succeeds and pagers like less
+	// still page — which is what ctx.SystemIO holds.
+	sysIn, sysOut, sysErrOut := ctx.In, ctx.Out, ctx.ErrOut
+	if ctx.SystemIO != nil {
+		sysIn, sysOut, sysErrOut = ctx.SystemIO.In, ctx.SystemIO.Out, ctx.SystemIO.ErrOut
+	}
+
 	stages := make([]pipelineStage, len(p.Stages))
-	var nextIn io.Reader = ctx.In
+	var nextIn io.Reader = sysIn
 	var prevPR *os.File // read end of the previous pipe — this stage's stdin
 	for i, cmd := range p.Stages {
 		localCtx := &ExecCtx{
 			In:     nextIn,
-			ErrOut: ctx.ErrOut,
+			ErrOut: sysErrOut,
 		}
 		var pr, pw *os.File
 		if i == len(p.Stages)-1 {
-			localCtx.Out = ctx.Out
+			localCtx.Out = sysOut
 		} else {
 			var err error
 			pr, pw, err = os.Pipe()

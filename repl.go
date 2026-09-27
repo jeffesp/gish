@@ -84,6 +84,7 @@ func runRawREPL(ctx *ExecCtx) {
 	defer term.Restore(fd, origState)
 
 	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
+	t.AutoCompleteCallback = completeLine
 
 	termCtx := &ExecCtx{
 		In:       in,

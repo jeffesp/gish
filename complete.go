@@ -1,12 +1,53 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
 )
+
+// completionLister, if non-nil, receives the candidate list when Tab
+// completion is ambiguous and can't extend the word any further — mirroring
+// zsh's default of listing completions below the prompt instead of just
+// beeping. Wired to the raw-mode REPL's term.Terminal in runRawREPL; left
+// nil in tests and in the scanner REPL, where there's no cursor/prompt to
+// redraw around a printed list.
+var completionLister io.Writer
+
+// completionRawOut, if non-nil, is the real terminal — bypassing
+// completionLister's Write — that a repeated ambiguous Tab erases the
+// previous listing through before printing the new one. completionLister
+// (term.Terminal.Write) only knows how to erase its own current
+// prompt/line row; it has no memory of a listing it printed on an earlier
+// call, so removing that requires raw cursor movement against the real
+// fd instead. Wired alongside completionLister in runRawREPL.
+var completionRawOut io.Writer
+
+// lastListingLines is how many lines the previous candidate listing
+// printed, so a following Tab that's still ambiguous can erase exactly
+// that many rows instead of stacking a new listing underneath. Reset to
+// 0 whenever a line is submitted (runRawREPL), since rows printed while
+// editing a previous line are no longer where this tracks them.
+var lastListingLines int
+
+// eraseLinesAbove deletes the n terminal rows directly above the
+// cursor's current row using ANSI's Delete Line (DL) sequence, which
+// shifts everything below those rows up to fill the gap rather than
+// just blanking them — otherwise the erased rows would stay behind as a
+// permanent empty gap instead of disappearing. Because content shifts
+// up to fill the deleted rows, the cursor ends up at the same column it
+// started at, on whatever now occupies its original row (i.e., wherever
+// what used to be below the deleted block shifted up to).
+func eraseLinesAbove(out io.Writer, n int) {
+	if n <= 0 {
+		return
+	}
+	fmt.Fprintf(out, "\x1b[%dA\x1b[%dM", n, n) //nolint:errcheck
+}
 
 // word describes the token the cursor sits inside, as found by
 // wordAtCursor.
@@ -205,6 +246,13 @@ func filterEntries(matches []string, keepDirs bool) []string {
 	return out
 }
 
+// candidateList formats matches for display below the prompt, one per
+// line, terminated by a trailing newline so a following prompt redraw
+// starts on its own line.
+func candidateList(matches []string) string {
+	return strings.Join(matches, "\n") + "\n"
+}
+
 // commonPrefix returns the longest byte-string prefix shared by every
 // element of matches, trimmed back to a full rune if it would otherwise
 // split one in the middle.
@@ -314,8 +362,15 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 
 	prefix := commonPrefix(matches)
 	if prefix == "" || prefix == w.Text {
-		// Ambiguous with nothing new to add. A later step should list
-		// the candidates here; for now just leave the line alone.
+		// Ambiguous with nothing new to add: list the candidates instead
+		// of silently doing nothing.
+		if completionLister != nil {
+			if completionRawOut != nil {
+				eraseLinesAbove(completionRawOut, lastListingLines)
+			}
+			io.WriteString(completionLister, candidateList(matches)) //nolint:errcheck
+			lastListingLines = len(matches)
+		}
 		return "", 0, false
 	}
 

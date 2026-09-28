@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -139,6 +140,21 @@ func TestCommonPrefix(t *testing.T) {
 	}
 }
 
+func TestCandidateList(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{"file.out"}, "file.out\n"},
+		{[]string{"file.out", "file.txt"}, "file.out\nfile.txt\n"},
+	}
+	for _, c := range cases {
+		if got := candidateList(c.in); got != c.want {
+			t.Errorf("candidateList(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestShellEscape(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"file.txt", "file.txt"},
@@ -181,6 +197,92 @@ func TestCompleteLine(t *testing.T) {
 			t.Errorf("%s: completeLine(%q, %d) = (%q, %d, %v), want (%q, %d, %v)",
 				c.name, c.line, c.pos, gotLine, gotPos, gotOK, c.wantLine, c.wantPos, c.wantOK)
 		}
+	}
+}
+
+func TestCompleteLinePartialExtend(t *testing.T) {
+	withTempDir(t, "file.txt", "file.out")
+
+	// Ambiguous, but the shared "file." prefix is longer than what was
+	// typed, so completion should advance to it and leave the word open
+	// for another Tab rather than doing nothing.
+	gotLine, gotPos, ok := completeLine("cat fi", 6, '\t')
+	wantLine := "cat file."
+	if !ok || gotLine != wantLine {
+		t.Errorf(`completeLine("cat fi") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
+	}
+}
+
+func TestCompleteLineListsAmbiguousCandidates(t *testing.T) {
+	withTempDir(t, "pfile.txt", "proj/")
+
+	var out strings.Builder
+	completionLister = &out
+	t.Cleanup(func() { completionLister = nil; lastListingLines = 0 })
+
+	// "p" is already the shared prefix of both matches, so there's
+	// nothing to extend — the candidates should be listed instead.
+	gotLine, _, ok := completeLine("cat p", 5, '\t')
+	if ok {
+		t.Errorf(`completeLine("cat p") = (%q, _, true), want ok=false (ambiguous)`, gotLine)
+	}
+
+	wantOut := "pfile.txt\nproj/\n"
+	if out.String() != wantOut {
+		t.Errorf("candidate listing = %q, want %q", out.String(), wantOut)
+	}
+}
+
+func TestEraseLinesAbove(t *testing.T) {
+	cases := []struct {
+		n    int
+		want string
+	}{
+		{0, ""},
+		{1, "\x1b[1A\x1b[1M"},
+		{2, "\x1b[2A\x1b[2M"},
+	}
+	for _, c := range cases {
+		var b strings.Builder
+		eraseLinesAbove(&b, c.n)
+		if got := b.String(); got != c.want {
+			t.Errorf("eraseLinesAbove(_, %d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+}
+
+func TestCompleteLineErasesPreviousListing(t *testing.T) {
+	withTempDir(t, "pfile.txt", "proj/")
+
+	var listed, raw strings.Builder
+	completionLister = &listed
+	completionRawOut = &raw
+	lastListingLines = 0
+	t.Cleanup(func() {
+		completionLister = nil
+		completionRawOut = nil
+		lastListingLines = 0
+	})
+
+	// First Tab: nothing printed yet, so nothing to erase.
+	completeLine("cat p", 5, '\t')
+	if raw.Len() != 0 {
+		t.Errorf("first listing erased something, got %q", raw.String())
+	}
+	if lastListingLines != 2 {
+		t.Errorf("lastListingLines = %d, want 2", lastListingLines)
+	}
+	listed.Reset()
+
+	// Second Tab on the same still-ambiguous word: the previous listing's
+	// 2 lines should be erased before the new one is printed.
+	completeLine("cat p", 5, '\t')
+	wantErase := "\x1b[2A\x1b[2M"
+	if raw.String() != wantErase {
+		t.Errorf("erase sequence = %q, want %q", raw.String(), wantErase)
+	}
+	if listed.String() != "pfile.txt\nproj/\n" {
+		t.Errorf("second listing = %q, want %q", listed.String(), "pfile.txt\nproj/\n")
 	}
 }
 

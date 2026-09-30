@@ -47,16 +47,31 @@ func eraseLinesBelow(out io.Writer, n int) {
 	fmt.Fprintf(out, "\x1b[1B\x1b[%dM\x1b[1A", n) //nolint:errcheck
 }
 
+// clearListing erases a completion listing still on screen below the
+// prompt, if any. Called at the top of every completeLine invocation —
+// so typing past a listing, or a later Tab landing on a different,
+// non-listing outcome (a unique match or a prefix extension), cleans it
+// up — and from enterFilter just before Enter/LF reaches
+// term.Terminal's decoder, since submitting the line isn't otherwise
+// routed through completeLine at all and would otherwise run the
+// command right on top of a listing nothing ever cleared.
+func clearListing() {
+	if lastListingLines > 0 && completionOut != nil {
+		eraseLinesBelow(completionOut, lastListingLines)
+		lastListingLines = 0
+	}
+}
+
 // printCandidatesBelow prints matches, arranged into columns, on fresh
-// rows directly below the current prompt/line — erasing a previous
-// listing there first, if lastListingLines says one is still up — and
-// returns the cursor to exactly where it started (same row and column).
-// Everything here is relative cursor movement against the real
-// terminal: no move depends on the terminal having scrolled or not, and
-// none of it touches the prompt/line's own row, so the prompt never
-// visibly shifts around the way it would if this went through
-// term.Terminal's Write (which always erases and redraws the current
-// line around whatever it's given).
+// rows directly below the current prompt/line, and returns the cursor
+// to exactly where it started (same row and column). It assumes any
+// previous listing has already been cleared (completeLine calls
+// clearListing before ever reaching here). Everything here is relative
+// cursor movement against the real terminal: no move depends on the
+// terminal having scrolled or not, and none of it touches the
+// prompt/line's own row, so the prompt never visibly shifts around the
+// way it would if this went through term.Terminal's Write (which always
+// erases and redraws the current line around whatever it's given).
 //
 // line and pos are the full line and cursor position completeLine was
 // called with — used with completionPrompt to compute the cursor's
@@ -67,7 +82,6 @@ func printCandidatesBelow(out io.Writer, matches []string, line string, pos int)
 	rows := strings.Count(listing, "\n")
 
 	var b strings.Builder
-	eraseLinesBelow(&b, lastListingLines)
 	b.WriteString("\r\n")
 	b.WriteString(strings.ReplaceAll(listing, "\n", "\r\n"))
 	fmt.Fprintf(&b, "\x1b[%dA", rows+1)
@@ -429,8 +443,10 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 }
 
 // completeLine is the AutoCompleteCallback hook for the raw-mode REPL's
-// term.Terminal. It fires for any key not already bound by x/term; Tab
-// ('\t') is the only key it cares about for now. See
+// term.Terminal. It fires for any key not already bound by x/term —
+// which includes every plain printable character typed, not just Tab
+// ('\t'), so that clearListing runs (and cleans up a stale listing) as
+// soon as the user keeps typing past one, not only on another Tab. See
 // plans/unlikely/possible-readline.md for the hook point and
 // plans/tab-completion.md for the completion design.
 //
@@ -440,6 +456,8 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 // Returning ok=false leaves the line untouched and lets x/term handle the
 // key normally (a no-op for Tab, since it isn't otherwise bound).
 func completeLine(line string, pos int, key rune) (string, int, bool) {
+	clearListing()
+
 	if key != '\t' {
 		return "", 0, false
 	}
@@ -477,4 +495,30 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 	}
 
 	return spliceCompletion(line, pos, w, prefix, "")
+}
+
+// enterFilter wraps a reader and, just before a raw '\r' or '\n' byte
+// (Enter) reaches term.Terminal's decoder, calls clearListing. Enter is
+// handled directly inside term.Terminal's key-handling switch, never
+// through completeLine/AutoCompleteCallback, so without this nothing
+// would clear a completion listing still on screen before the
+// submitted line runs and prints output right on top of it.
+//
+// Like ctrlCFilter, this relies on term.Terminal.readLine unlocking its
+// mutex around the Read call this wraps, which makes calling
+// clearListing (and its write through completionOut) here safe rather
+// than reentrant.
+type enterFilter struct {
+	io.Reader
+}
+
+func (f *enterFilter) Read(p []byte) (int, error) {
+	n, err := f.Reader.Read(p)
+	for _, b := range p[:n] {
+		if b == '\r' || b == '\n' {
+			clearListing()
+			break
+		}
+	}
+	return n, err
 }

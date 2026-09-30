@@ -301,6 +301,70 @@ func TestPrintCandidatesBelow(t *testing.T) {
 	}
 }
 
+func TestClearListing(t *testing.T) {
+	var out strings.Builder
+	completionOut = &out
+	t.Cleanup(func() { completionOut = nil; lastListingLines = 0 })
+
+	// Nothing to clear: a no-op.
+	lastListingLines = 0
+	clearListing()
+	if out.Len() != 0 {
+		t.Errorf("clearListing with nothing listed wrote %q, want nothing", out.String())
+	}
+
+	lastListingLines = 3
+	clearListing()
+	want := "\x1b[1B\x1b[3M\x1b[1A"
+	if out.String() != want {
+		t.Errorf("clearListing erase = %q, want %q", out.String(), want)
+	}
+	if lastListingLines != 0 {
+		t.Errorf("lastListingLines = %d after clearListing, want 0", lastListingLines)
+	}
+}
+
+// TestCompleteLineClearsStaleListing checks that a listing left on
+// screen from a previous Tab gets cleared no matter what the current
+// Tab does instead of replacing it with a new one: the word has since
+// become a unique match, it's extended to a longer (still ambiguous)
+// prefix, or it's still ambiguous with the exact same prefix as before.
+func TestCompleteLineClearsStaleListing(t *testing.T) {
+	var out strings.Builder
+	completionOut = &out
+	completionPrompt = "gish> "
+	t.Cleanup(func() {
+		completionOut = nil
+		completionPrompt = ""
+		lastListingLines = 0
+	})
+
+	cases := []struct {
+		name  string
+		files []string
+		line  string
+	}{
+		{"becomes unique", []string{"pfile.txt", "proj/"}, "cat pf"},
+		{"extends to a longer ambiguous prefix", []string{"afile.txt", "afolder/"}, "cat a"},
+		{"still ambiguous with the same prefix", []string{"pfile.txt", "proj/"}, "cat p"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			withTempDir(t, c.files...)
+			lastListingLines = 2
+			out.Reset()
+
+			completeLine(c.line, len(c.line), '\t')
+
+			wantErase := "\x1b[1B\x1b[2M\x1b[1A"
+			if got := out.String(); !strings.HasPrefix(got, wantErase) {
+				t.Errorf("completeLine(%q) wrote %q, want it to start with the erase sequence %q", c.line, got, wantErase)
+			}
+		})
+	}
+}
+
 func TestCompleteLineQuoted(t *testing.T) {
 	withTempDir(t, "file with space.txt")
 
@@ -326,6 +390,49 @@ func TestCompleteLineDirOnlyCommand(t *testing.T) {
 	wantLine := "cd proj/"
 	if !ok || gotLine != wantLine {
 		t.Errorf(`completeLine("cd p") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
+	}
+}
+
+func TestEnterFilterClearsListing(t *testing.T) {
+	var out strings.Builder
+	completionOut = &out
+	t.Cleanup(func() { completionOut = nil; lastListingLines = 0 })
+
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"carriage return", "x\r"},
+		{"line feed", "x\n"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			lastListingLines = 2
+			out.Reset()
+
+			f := &enterFilter{Reader: strings.NewReader(c.in)}
+			buf := make([]byte, len(c.in))
+			if _, err := f.Read(buf); err != nil {
+				t.Fatalf("Read: %v", err)
+			}
+
+			want := "\x1b[1B\x1b[2M\x1b[1A"
+			if out.String() != want {
+				t.Errorf("erase = %q, want %q", out.String(), want)
+			}
+			if lastListingLines != 0 {
+				t.Errorf("lastListingLines = %d, want 0", lastListingLines)
+			}
+		})
+	}
+}
+
+func TestEnterFilterPassesBytesThrough(t *testing.T) {
+	f := &enterFilter{Reader: strings.NewReader("ab\rc")}
+	got := readAll(t, f)
+	if string(got) != "ab\rc" {
+		t.Errorf("got %q, want %q", got, "ab\rc")
 	}
 }
 

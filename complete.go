@@ -10,22 +10,22 @@ import (
 	"unicode/utf8"
 )
 
-// completionLister, if non-nil, receives the candidate list when Tab
-// completion is ambiguous and can't extend the word any further — mirroring
-// zsh's default of listing completions below the prompt instead of just
-// beeping. Wired to the raw-mode REPL's term.Terminal in runRawREPL; left
-// nil in tests and in the scanner REPL, where there's no cursor/prompt to
-// redraw around a printed list.
-var completionLister io.Writer
+// completionOut, if non-nil, is the real terminal that a Tab writes an
+// ambiguous completion's candidate list to. This has to be the real fd,
+// not term.Terminal's own Write: printing a listing here works entirely
+// by moving the real cursor with raw escapes and never touches the
+// current prompt/line, which term.Terminal's Write can't do (its erase
+// logic assumes it owns everything on screen and always redraws the
+// prompt/line right after whatever it prints). Wired to the raw-mode
+// REPL's real output in runRawREPL; left nil in tests and in the
+// scanner REPL, where there's no cursor to move.
+var completionOut io.Writer
 
-// completionRawOut, if non-nil, is the real terminal — bypassing
-// completionLister's Write — that a repeated ambiguous Tab erases the
-// previous listing through before printing the new one. completionLister
-// (term.Terminal.Write) only knows how to erase its own current
-// prompt/line row; it has no memory of a listing it printed on an earlier
-// call, so removing that requires raw cursor movement against the real
-// fd instead. Wired alongside completionLister in runRawREPL.
-var completionRawOut io.Writer
+// completionPrompt is the prompt string currently shown by the raw-mode
+// REPL (runRawREPL keeps it in sync with each t.SetPrompt(JSPrompt())
+// call), used with line and pos to compute the cursor's current column
+// so printCandidatesBelow can return to it after printing a listing.
+var completionPrompt string
 
 // lastListingLines is how many lines the previous candidate listing
 // printed, so a following Tab that's still ambiguous can erase exactly
@@ -34,19 +34,49 @@ var completionRawOut io.Writer
 // editing a previous line are no longer where this tracks them.
 var lastListingLines int
 
-// eraseLinesAbove deletes the n terminal rows directly above the
+// eraseLinesBelow deletes the n terminal rows directly below the
 // cursor's current row using ANSI's Delete Line (DL) sequence, which
-// shifts everything below those rows up to fill the gap rather than
-// just blanking them — otherwise the erased rows would stay behind as a
-// permanent empty gap instead of disappearing. Because content shifts
-// up to fill the deleted rows, the cursor ends up at the same column it
-// started at, on whatever now occupies its original row (i.e., wherever
-// what used to be below the deleted block shifted up to).
-func eraseLinesAbove(out io.Writer, n int) {
+// shifts whatever is further below up to fill the gap rather than just
+// blanking them — otherwise the erased rows would stay behind as a
+// permanent empty gap instead of disappearing. It leaves the cursor
+// back on its starting row.
+func eraseLinesBelow(out io.Writer, n int) {
 	if n <= 0 {
 		return
 	}
-	fmt.Fprintf(out, "\x1b[%dA\x1b[%dM", n, n) //nolint:errcheck
+	fmt.Fprintf(out, "\x1b[1B\x1b[%dM\x1b[1A", n) //nolint:errcheck
+}
+
+// printCandidatesBelow prints matches, arranged into columns, on fresh
+// rows directly below the current prompt/line — erasing a previous
+// listing there first, if lastListingLines says one is still up — and
+// returns the cursor to exactly where it started (same row and column).
+// Everything here is relative cursor movement against the real
+// terminal: no move depends on the terminal having scrolled or not, and
+// none of it touches the prompt/line's own row, so the prompt never
+// visibly shifts around the way it would if this went through
+// term.Terminal's Write (which always erases and redraws the current
+// line around whatever it's given).
+//
+// line and pos are the full line and cursor position completeLine was
+// called with — used with completionPrompt to compute the cursor's
+// current column (assuming, like the rest of completion, that the
+// prompt+line fits on one terminal row without wrapping).
+func printCandidatesBelow(out io.Writer, matches []string, line string, pos int) {
+	listing := candidateList(matches)
+	rows := strings.Count(listing, "\n")
+
+	var b strings.Builder
+	eraseLinesBelow(&b, lastListingLines)
+	b.WriteString("\r\n")
+	b.WriteString(strings.ReplaceAll(listing, "\n", "\r\n"))
+	fmt.Fprintf(&b, "\x1b[%dA", rows+1)
+	if col := utf8.RuneCountInString(completionPrompt) + utf8.RuneCountInString(line[:pos]); col > 0 {
+		fmt.Fprintf(&b, "\x1b[%dC", col)
+	}
+	io.WriteString(out, b.String()) //nolint:errcheck
+
+	lastListingLines = rows
 }
 
 // word describes the token the cursor sits inside, as found by
@@ -440,13 +470,8 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 	if prefix == "" || prefix == w.Text {
 		// Ambiguous with nothing new to add: list the candidates instead
 		// of silently doing nothing.
-		if completionLister != nil {
-			if completionRawOut != nil {
-				eraseLinesAbove(completionRawOut, lastListingLines)
-			}
-			listing := candidateList(matches)
-			io.WriteString(completionLister, listing) //nolint:errcheck
-			lastListingLines = strings.Count(listing, "\n")
+		if completionOut != nil {
+			printCandidatesBelow(completionOut, matches, line, pos)
 		}
 		return "", 0, false
 	}

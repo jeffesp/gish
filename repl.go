@@ -87,8 +87,7 @@ func runRawREPL(ctx *ExecCtx) {
 	t := term.NewTerminal(readWriter{ctrlC, ctx.Out}, "gish> ")
 	ctrlC.echo = t
 	t.AutoCompleteCallback = completeLine
-	completionLister = t
-	completionRawOut = ctx.Out
+	completionOut = ctx.Out
 
 	termCtx := &ExecCtx{
 		In:       in,
@@ -118,7 +117,8 @@ func runRawREPL(ctx *ExecCtx) {
 	InitScripting(termCtx)
 
 	for {
-		t.SetPrompt(JSPrompt())
+		completionPrompt = JSPrompt()
+		t.SetPrompt(completionPrompt)
 		line, err := t.ReadLine()
 		lastListingLines = 0
 		if err != nil {

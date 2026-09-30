@@ -155,6 +155,34 @@ func TestCandidateList(t *testing.T) {
 	}
 }
 
+func TestColumnate(t *testing.T) {
+	entries := []string{"a", "bb", "ccc", "dddd", "e", "ff"}
+	cases := []struct {
+		name  string
+		width int
+		want  string
+	}{
+		{"unknown width falls back to one per line", 0, "a\nbb\nccc\ndddd\ne\nff\n"},
+		{"too narrow for even one column falls back", 1, "a\nbb\nccc\ndddd\ne\nff\n"},
+		// down-then-across into 2 rows of 3 cols: {a,dddd} {ccc,e} {... }
+		{"fits three columns", 12, "a   ccc   e\nbb  dddd  ff\n"},
+		// down-then-across into 4 rows of 2 cols: {a,bb,ccc,dddd} {e,ff}
+		{"fits two columns", 8, "a     e\nbb    ff\nccc\ndddd\n"},
+		{"fits one column", 4, "a\nbb\nccc\ndddd\ne\nff\n"},
+	}
+	for _, c := range cases {
+		if got := columnate(entries, c.width); got != c.want {
+			t.Errorf("%s: columnate(_, %d) = %q, want %q", c.name, c.width, got, c.want)
+		}
+	}
+}
+
+func TestColumnateEmpty(t *testing.T) {
+	if got := columnate(nil, 80); got != "" {
+		t.Errorf("columnate(nil, 80) = %q, want empty", got)
+	}
+}
+
 func TestShellEscape(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"file.txt", "file.txt"},

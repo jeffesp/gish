@@ -103,11 +103,13 @@ func runRawREPL(ctx *ExecCtx) {
 
 	if w, h, err := term.GetSize(fd); err == nil {
 		t.SetSize(w, h)
+		completionWidth = w
 	}
 
 	watchWinch(func() {
 		if w, h, err := term.GetSize(fd); err == nil {
 			t.SetSize(w, h)
+			completionWidth = w
 		}
 	})
 

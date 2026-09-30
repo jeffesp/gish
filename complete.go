@@ -246,11 +246,87 @@ func filterEntries(matches []string, keepDirs bool) []string {
 	return out
 }
 
-// candidateList formats matches for display below the prompt, one per
-// line, terminated by a trailing newline so a following prompt redraw
-// starts on its own line.
+// completionWidth is the terminal's current column count, kept in sync
+// with the raw-mode REPL's term.Terminal size in runRawREPL (initial
+// size and SIGWINCH updates alike), for sizing candidateList's columns.
+// 0 (its zero value, and its value in tests and the scanner REPL, where
+// there's no real terminal to measure) means "unknown," and candidateList
+// falls back to one entry per line.
+var completionWidth int
+
+// candidateList formats matches for display below the prompt, arranged
+// into as many columns as fit completionWidth (see columnate), and
+// terminated by a trailing newline so a following prompt redraw starts
+// on its own line.
 func candidateList(matches []string) string {
-	return strings.Join(matches, "\n") + "\n"
+	return columnate(matches, completionWidth)
+}
+
+// columnate arranges entries into columns sized to fit width, filling
+// down each column before moving to the next (matching ls -C's layout),
+// and returns them as complete rows terminated by "\n". Each column is
+// as wide as its widest entry, with 2 spaces between columns. If width
+// is unknown (<= 0), or even a single column of entries is wider than
+// width, it falls back to one entry per line.
+func columnate(entries []string, width int) string {
+	if len(entries) == 0 {
+		return ""
+	}
+
+	const spacing = 2
+	n := len(entries)
+
+	// Fallback: one entry per line.
+	rows, cols, colWidths := n, 1, columnWidths(entries, 1, n)
+
+	if width > 0 {
+		for r := 1; r <= n; r++ {
+			c := (n + r - 1) / r // columns needed for this many rows
+			w := columnWidths(entries, c, r)
+			total := (c - 1) * spacing
+			for _, cw := range w {
+				total += cw
+			}
+			if total <= width {
+				rows, cols, colWidths = r, c, w
+				break
+			}
+		}
+	}
+
+	var b strings.Builder
+	for r := range rows {
+		for c := range cols {
+			i := c*rows + r
+			if i >= n {
+				break
+			}
+			if c > 0 {
+				b.WriteString("  ")
+			}
+			entry := entries[i]
+			b.WriteString(entry)
+			if c < cols-1 && i+rows < n {
+				b.WriteString(strings.Repeat(" ", colWidths[c]-utf8.RuneCountInString(entry)))
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// columnWidths returns, for a down-then-across layout of entries into
+// cols columns of up to rows entries each, the display width of each
+// column's widest entry.
+func columnWidths(entries []string, cols, rows int) []int {
+	w := make([]int, cols)
+	for i, e := range entries {
+		c := i / rows
+		if l := utf8.RuneCountInString(e); l > w[c] {
+			w[c] = l
+		}
+	}
+	return w
 }
 
 // commonPrefix returns the longest byte-string prefix shared by every
@@ -368,8 +444,9 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 			if completionRawOut != nil {
 				eraseLinesAbove(completionRawOut, lastListingLines)
 			}
-			io.WriteString(completionLister, candidateList(matches)) //nolint:errcheck
-			lastListingLines = len(matches)
+			listing := candidateList(matches)
+			io.WriteString(completionLister, listing) //nolint:errcheck
+			lastListingLines = strings.Count(listing, "\n")
 		}
 		return "", 0, false
 	}

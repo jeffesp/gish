@@ -12,8 +12,6 @@ import (
 func watchWinch(update func()) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
-	defer signal.Stop(ch)
-	defer close(ch)
 	go func() {
 		for range ch {
 			update()

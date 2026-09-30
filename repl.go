@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/term"
+	xterm "golang.org/x/term"
+
+	"gish/internal/term"
 )
 
 type readWriter struct {
@@ -17,7 +19,7 @@ type readWriter struct {
 }
 
 func RunREPL(ctx *ExecCtx) {
-	if f, ok := ctx.In.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+	if f, ok := ctx.In.(*os.File); ok && xterm.IsTerminal(int(f.Fd())) {
 		runRawREPL(ctx)
 		return
 	}
@@ -76,12 +78,12 @@ func execLine(line string, ctx *ExecCtx) {
 func runRawREPL(ctx *ExecCtx) {
 	in := ctx.In.(*os.File)
 	fd := int(in.Fd())
-	origState, err := term.MakeRaw(fd)
+	origState, err := xterm.MakeRaw(fd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gish: failed to set raw mode: %v\n", err)
 		os.Exit(1)
 	}
-	defer term.Restore(fd, origState)
+	defer xterm.Restore(fd, origState)
 
 	ctrlC := &ctrlCFilter{Reader: in}
 	t := term.NewTerminal(readWriter{&enterFilter{Reader: ctrlC}, ctx.Out}, "gish> ")
@@ -95,18 +97,18 @@ func runRawREPL(ctx *ExecCtx) {
 		ErrOut:   t,
 		SystemIO: ctx,
 		RestoreTerm: func() func() {
-			term.Restore(fd, origState)
-			return func() { term.MakeRaw(fd) } //nolint:errcheck
+			xterm.Restore(fd, origState)
+			return func() { xterm.MakeRaw(fd) } //nolint:errcheck
 		},
 	}
 
-	if w, h, err := term.GetSize(fd); err == nil {
+	if w, h, err := xterm.GetSize(fd); err == nil {
 		t.SetSize(w, h)
 		completionWidth = w
 	}
 
 	watchWinch(func() {
-		if w, h, err := term.GetSize(fd); err == nil {
+		if w, h, err := xterm.GetSize(fd); err == nil {
 			t.SetSize(w, h)
 			completionWidth = w
 		}

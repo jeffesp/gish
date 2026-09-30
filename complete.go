@@ -443,12 +443,12 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 }
 
 // completeLine is the AutoCompleteCallback hook for the raw-mode REPL's
-// term.Terminal. It fires for any key not already bound by x/term —
-// which includes every plain printable character typed, not just Tab
-// ('\t'), so that clearListing runs (and cleans up a stale listing) as
-// soon as the user keeps typing past one, not only on another Tab. See
-// plans/unlikely/possible-readline.md for the hook point and
-// plans/tab-completion.md for the completion design.
+// term.Terminal. It fires for any key not already bound by its own
+// key-handling switch — which includes every plain printable character
+// typed, not just Tab ('\t'), so that clearListing runs (and cleans up
+// a stale listing) as soon as the user keeps typing past one, not only
+// on another Tab. See plans/unlikely/possible-readline.md for the hook
+// point and plans/tab-completion.md for the completion design.
 //
 // For now every position is completed as a filesystem path, including
 // command position — no builtin/alias/$PATH lookup yet.

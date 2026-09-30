@@ -83,7 +83,11 @@ func runRawREPL(ctx *ExecCtx) {
 	}
 	defer term.Restore(fd, origState)
 
-	t := term.NewTerminal(readWriter{in, ctx.Out}, "gish> ")
+	ctrlC := &ctrlCFilter{Reader: in}
+	t := term.NewTerminal(readWriter{&enterFilter{Reader: ctrlC}, ctx.Out}, "gish> ")
+	ctrlC.echo = t
+	t.AutoCompleteCallback = completeLine
+	completionOut = ctx.Out
 
 	termCtx := &ExecCtx{
 		In:       in,
@@ -98,11 +102,13 @@ func runRawREPL(ctx *ExecCtx) {
 
 	if w, h, err := term.GetSize(fd); err == nil {
 		t.SetSize(w, h)
+		completionWidth = w
 	}
 
 	watchWinch(func() {
 		if w, h, err := term.GetSize(fd); err == nil {
 			t.SetSize(w, h)
+			completionWidth = w
 		}
 	})
 
@@ -111,8 +117,10 @@ func runRawREPL(ctx *ExecCtx) {
 	InitScripting(termCtx)
 
 	for {
-		t.SetPrompt(JSPrompt())
+		completionPrompt = JSPrompt()
+		t.SetPrompt(completionPrompt)
 		line, err := t.ReadLine()
+		lastListingLines = 0
 		if err != nil {
 			break
 		}

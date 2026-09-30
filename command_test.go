@@ -112,6 +112,47 @@ func TestPipelineRunsMultipleCommands(t *testing.T) {
 	}
 }
 
+// TestPipelineExecUsesSystemIO guards against a regression where pipeline
+// stages wired their boundary stdin/stdout straight from ctx.In/ctx.Out,
+// bypassing ctx.SystemIO. That matters under the raw-mode REPL, where
+// ctx.Out is a *term.Terminal wrapper rather than an *os.File: a child
+// process (e.g. less) connected to it gets a Go-managed pipe instead of
+// the real tty fd, so isatty() fails in the child and pagers stop paging.
+// It also checks that an interior stage stays wired to the pipe between
+// stages rather than being redirected to SystemIO.
+func TestPipelineExecUsesSystemIO(t *testing.T) {
+	pipeline := &Pipeline{Stages: []*Command{
+		{Tokens: []Token{{Kind: TokenWord, Value: "echo"}, {Kind: TokenWord, Value: "hello"}}},
+		{Tokens: []Token{{Kind: TokenWord, Value: "cat"}}},
+	}}
+
+	systemOut := &strings.Builder{}
+	systemCtx := &ExecCtx{
+		In:     strings.NewReader(""),
+		Out:    systemOut,
+		ErrOut: &strings.Builder{},
+	}
+
+	ctxOut := &strings.Builder{}
+	ctx := &ExecCtx{
+		In:       strings.NewReader(""),
+		Out:      ctxOut,
+		ErrOut:   &strings.Builder{},
+		SystemIO: systemCtx,
+	}
+
+	if err := pipeline.Exec(ctx); err != nil {
+		t.Fatalf("Pipeline.Exec: %v", err)
+	}
+
+	if systemOut.String() != "hello\n" {
+		t.Errorf("expected final stage's output on SystemIO.Out, got %q", systemOut.String())
+	}
+	if ctxOut.String() != "" {
+		t.Errorf("expected ctx.Out to be unused, got %q", ctxOut.String())
+	}
+}
+
 // requiresSh skips tests that shell out to `sh -c` on platforms without a
 // POSIX sh (Windows).
 func requiresSh(t *testing.T) {

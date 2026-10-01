@@ -86,6 +86,11 @@ type Terminal struct {
 	// so a caller can react to every keystroke (e.g. clearing something
 	// drawn outside the line) without duplicating which keys Terminal
 	// itself binds.
+	//
+	// Skipped for bracketed-paste content (except the Enter/LF that
+	// still submits the line), so a large paste doesn't fire it once per
+	// pasted character. Disabled during ReadPassword, like
+	// AutoCompleteCallback.
 	PreKeyCallback func(line string, pos int, key rune)
 
 	// Escape contains a pointer to the escape codes for this terminal.
@@ -525,7 +530,13 @@ func (t *Terminal) historyAdd(entry string) {
 // handleKey processes the given key and, optionally, returns a line of text
 // that the user has entered.
 func (t *Terminal) handleKey(key rune) (line string, ok bool) {
-	if t.PreKeyCallback != nil {
+	// A key is "pasting" if it's bracketed-paste content that gets
+	// inserted literally rather than processed as a binding — Enter/LF
+	// are excluded even during a paste since they still submit the line
+	// below, same as typed.
+	pasting := t.pasteActive && key != keyEnter && key != keyLF
+
+	if t.PreKeyCallback != nil && !pasting {
 		prefix := string(t.line[:t.pos])
 		suffix := string(t.line[t.pos:])
 
@@ -534,7 +545,7 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 		t.lock.Lock()
 	}
 
-	if t.pasteActive && key != keyEnter && key != keyLF {
+	if pasting {
 		t.addKeyToLine(key)
 		return
 	}
@@ -812,7 +823,8 @@ func (t *Terminal) Write(buf []byte) (n int, err error) {
 // ReadPassword temporarily changes the prompt and reads a password, without
 // echo, from the terminal.
 //
-// The AutoCompleteCallback is disabled during this call.
+// AutoCompleteCallback and PreKeyCallback are both disabled during this
+// call.
 func (t *Terminal) ReadPassword(prompt string) (line string, err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -822,8 +834,11 @@ func (t *Terminal) ReadPassword(prompt string) (line string, err error) {
 	t.echo = false
 	oldAutoCompleteCallback := t.AutoCompleteCallback
 	t.AutoCompleteCallback = nil
+	oldPreKeyCallback := t.PreKeyCallback
+	t.PreKeyCallback = nil
 	defer func() {
 		t.AutoCompleteCallback = oldAutoCompleteCallback
+		t.PreKeyCallback = oldPreKeyCallback
 	}()
 
 	line, err = t.readLine()

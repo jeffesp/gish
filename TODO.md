@@ -23,7 +23,7 @@ scripting.go:36-61 — `gish.print`/`gish.println` are closed over the `ctx` pas
 
 Completion also no longer guesses the cursor's screen column from `completionPrompt`'s length: `term.Terminal` exposes a `CursorColumn()` accessor now, and `printCandidatesBelow` reads the real position straight off it.
 
-Still open: arrows, Home/End, Delete, Alt+Left/Right, function keys/PageUp/PageDown/Insert still collapse to `keyUnknown` in `bytesToKey`. Straightforward now that we own the file — just not needed yet.
+Still open: arrows, Home/End, Delete, and Alt+Left/Right are already decoded by `bytesToKey` (and were before the fork). What's actually still unhandled — PageUp/PageDown/Insert (`\x1b[5~`/`\x1b[6~`/`\x1b[2~`) and function keys — fall through to the generic ending-byte scan and collapse to `keyUnknown`. Straightforward to add now that we own the file — just not needed yet.
 
 ### Tests mutate global state without cleanup guards
 

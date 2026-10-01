@@ -471,6 +471,60 @@ func TestCommandForWord(t *testing.T) {
 	}
 }
 
+func TestCommandCandidates(t *testing.T) {
+	bin := t.TempDir()
+	for name, mode := range map[string]os.FileMode{
+		"gzzexec":  0o755,
+		"gzzplain": 0o644,
+		"gzzecho":  0o755,
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), nil, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(bin, "gzzdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	RegisterBuiltin("gzzbuiltin", nil)
+	t.Cleanup(func() { delete(Builtins, "gzzbuiltin") })
+	// Same name as an executable: must be listed once.
+	aliases["gzzecho"] = "echo"
+	aliases["gzzalias"] = "ls"
+	t.Cleanup(func() { delete(aliases, "gzzecho"); delete(aliases, "gzzalias") })
+
+	got := commandCandidates("gzz")
+	want := []string{"gzzalias", "gzzbuiltin", "gzzecho", "gzzexec"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("commandCandidates(gzz) = %v, want %v", got, want)
+	}
+	if got := commandCandidates(""); got != nil {
+		t.Errorf("commandCandidates(\"\") = %v, want nil", got)
+	}
+}
+
+func TestCompleteLineCommandPosition(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gzzonly"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	withTempDir(t, "gzzfile")
+
+	cases := []struct{ line, want string }{
+		{"gzzo", "gzzonly "},
+		{"cat x | gzzo", "cat x | gzzonly "},
+		{"cat gzzf", "cat gzzfile "}, // argument position stays a file
+	}
+	for _, c := range cases {
+		got, _, ok := completeLine(c.line, len(c.line), '\t')
+		if !ok || got != c.want {
+			t.Errorf("completeLine(%q) = (%q, %v), want %q", c.line, got, ok, c.want)
+		}
+	}
+}
+
 func TestFileCandidatesTilde(t *testing.T) {
 	home := t.TempDir()
 	for _, name := range []string{"Docs/", "Downloads/", "doc.txt"} {

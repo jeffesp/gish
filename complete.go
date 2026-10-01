@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -273,6 +274,64 @@ func isDirEntry(dir string, e os.DirEntry) bool {
 	return err == nil && info.IsDir()
 }
 
+// commandCandidates lists the aliases, builtins, and executables on $PATH
+// whose name starts with prefix, deduplicated and sorted. An empty prefix
+// yields nothing: listing every command on the system isn't useful.
+func commandCandidates(prefix string) []string {
+	if prefix == "" {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	add := func(name string) {
+		if strings.HasPrefix(name, prefix) {
+			seen[name] = true
+		}
+	}
+
+	for name := range aliases {
+		add(name)
+	}
+	for name := range Builtins {
+		add(name)
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if dir == "" {
+			dir = "."
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Name(), prefix) {
+				continue
+			}
+			if isExecutableEntry(dir, e) {
+				seen[e.Name()] = true
+			}
+		}
+	}
+
+	matches := make([]string, 0, len(seen))
+	for name := range seen {
+		matches = append(matches, name)
+	}
+	sort.Strings(matches)
+	return matches
+}
+
+// isExecutableEntry reports whether e is a non-directory with an execute
+// bit set, following a symlink if e is one. On Windows, which has no
+// execute bit, any non-directory file counts.
+func isExecutableEntry(dir string, e os.DirEntry) bool {
+	info, err := os.Stat(filepath.Join(dir, e.Name()))
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return runtime.GOOS == "windows" || info.Mode()&0o111 != 0
+}
+
 // dirOnlyCommands lists commands whose arguments should only complete to
 // directories (files are filtered out of the candidate list). Edit this
 // map to add more.
@@ -480,8 +539,10 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 // plans/unlikely/possible-readline.md for the hook point and
 // plans/tab-completion.md for the completion design.
 //
-// For now every position is completed as a filesystem path, including
-// command position — no builtin/alias/$PATH lookup yet.
+// A word in command position with no path separator completes against
+// aliases, builtins, and executables on $PATH; every other word (including
+// a command-position word like "./foo" or "/usr/b") completes as a
+// filesystem path.
 //
 // Returning ok=false leaves the line untouched and lets x/term handle the
 // key normally (a no-op for Tab, since it isn't otherwise bound).
@@ -491,7 +552,12 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 	}
 
 	w := wordAtCursor(line, pos)
-	matches := fileCandidates(w.Text)
+	var matches []string
+	if w.IsCommand && !strings.ContainsRune(w.Text, filepath.Separator) && !strings.HasPrefix(w.Text, "~") {
+		matches = commandCandidates(w.Text)
+	} else {
+		matches = fileCandidates(w.Text)
+	}
 
 	switch cmd := commandForWord(line, w); {
 	case dirOnlyCommands[cmd]:

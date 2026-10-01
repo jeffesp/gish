@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -496,6 +497,9 @@ func TestCommandCandidates(t *testing.T) {
 
 	got := commandCandidates("gzz")
 	want := []string{"gzzalias", "gzzbuiltin", "gzzecho", "gzzexec"}
+	if runtime.GOOS == "windows" {
+		want = append(want, "gzzplain")
+	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("commandCandidates(gzz) = %v, want %v", got, want)
 	}
@@ -537,12 +541,13 @@ func TestFileCandidatesTilde(t *testing.T) {
 	}
 	t.Setenv("HOME", home)
 
+	sep := string(filepath.Separator)
 	got := fileCandidates("~/Do")
-	want := []string{"~/Docs/", "~/Downloads/"}
+	want := []string{"~/Docs" + sep, "~/Downloads" + sep}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("fileCandidates(~/Do) = %v, want %v", got, want)
 	}
-	if got := fileCandidates("~"); len(got) != 1 || got[0] != "~/" {
+	if got := fileCandidates("~"); len(got) != 1 || got[0] != "~"+sep {
 		t.Errorf("fileCandidates(~) = %v, want [~/]", got)
 	}
 }

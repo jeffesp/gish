@@ -247,8 +247,8 @@ func TestEraseLinesBelow(t *testing.T) {
 		want string
 	}{
 		{0, ""},
-		{1, "\x1b[1B\x1b[1M\x1b[1A"},
-		{2, "\x1b[1B\x1b[2M\x1b[1A"},
+		{1, "\x1b7\x1b[1B\x1b[1M\x1b8"},
+		{2, "\x1b7\x1b[1B\x1b[2M\x1b8"},
 	}
 	for _, c := range cases {
 		var b strings.Builder
@@ -259,16 +259,22 @@ func TestEraseLinesBelow(t *testing.T) {
 	}
 }
 
+// fakeColumner is a cursorColumner stand-in for tests, which have no real
+// term.Terminal to query.
+type fakeColumner struct{ col int }
+
+func (f fakeColumner) CursorColumn() int { return f.col }
+
 func TestPrintCandidatesBelow(t *testing.T) {
 	withTempDir(t, "pfile.txt", "proj/")
 
 	var out strings.Builder
 	completionOut = &out
-	completionPrompt = "gish> "
+	completionTerm = fakeColumner{col: len("gish> cat p")}
 	lastListingLines = 0
 	t.Cleanup(func() {
 		completionOut = nil
-		completionPrompt = ""
+		completionTerm = nil
 		lastListingLines = 0
 	})
 
@@ -300,7 +306,7 @@ func TestPrintCandidatesBelow(t *testing.T) {
 	out.Reset()
 	clearListing()
 	completeLine(line, len(line), '\t')
-	wantSecond := "\x1b[1B\x1b[2M\x1b[1A" + want
+	wantSecond := "\x1b7\x1b[1B\x1b[2M\x1b8" + want
 	if out.String() != wantSecond {
 		t.Errorf("second printed = %q, want %q", out.String(), wantSecond)
 	}
@@ -320,7 +326,7 @@ func TestClearListing(t *testing.T) {
 
 	lastListingLines = 3
 	clearListing()
-	want := "\x1b[1B\x1b[3M\x1b[1A"
+	want := "\x1b7\x1b[1B\x1b[3M\x1b8"
 	if out.String() != want {
 		t.Errorf("clearListing erase = %q, want %q", out.String(), want)
 	}
@@ -337,10 +343,8 @@ func TestClearListing(t *testing.T) {
 func TestCompleteLineClearsStaleListing(t *testing.T) {
 	var out strings.Builder
 	completionOut = &out
-	completionPrompt = "gish> "
 	t.Cleanup(func() {
 		completionOut = nil
-		completionPrompt = ""
 		lastListingLines = 0
 	})
 
@@ -367,7 +371,7 @@ func TestCompleteLineClearsStaleListing(t *testing.T) {
 			clearListing()
 			completeLine(c.line, len(c.line), '\t')
 
-			wantErase := "\x1b[1B\x1b[2M\x1b[1A"
+			wantErase := "\x1b7\x1b[1B\x1b[2M\x1b8"
 			if got := out.String(); !strings.HasPrefix(got, wantErase) {
 				t.Errorf("completeLine(%q) wrote %q, want it to start with the erase sequence %q", c.line, got, wantErase)
 			}

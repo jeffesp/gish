@@ -10,6 +10,21 @@ import (
 	"unicode/utf8"
 )
 
+// cursorColumner is satisfied by *term.Terminal's CursorColumn method.
+// Expressed as an interface, rather than importing gish/internal/term
+// directly, so tests can fake a cursor column without driving a real
+// Terminal through keystrokes.
+type cursorColumner interface {
+	CursorColumn() int
+}
+
+// completionTerm, if non-nil, is the raw-mode REPL's term.Terminal,
+// queried for the cursor's actual on-screen column so
+// printCandidatesBelow can return to it after printing a listing. Wired
+// up alongside completionOut in runRawREPL; left nil in tests (which
+// fake it) and in the scanner REPL.
+var completionTerm cursorColumner
+
 // completionOut, if non-nil, is the real terminal that a Tab writes an
 // ambiguous completion's candidate list to. This has to be the real fd,
 // not term.Terminal's own Write: printing a listing here works entirely
@@ -20,12 +35,6 @@ import (
 // REPL's real output in runRawREPL; left nil in tests and in the
 // scanner REPL, where there's no cursor to move.
 var completionOut io.Writer
-
-// completionPrompt is the prompt string currently shown by the raw-mode
-// REPL (runRawREPL keeps it in sync with each t.SetPrompt(JSPrompt())
-// call), used with line and pos to compute the cursor's current column
-// so printCandidatesBelow can return to it after printing a listing.
-var completionPrompt string
 
 // lastListingLines is how many lines the previous candidate listing
 // printed, so a following Tab that's still ambiguous can erase exactly
@@ -38,23 +47,28 @@ var lastListingLines int
 // cursor's current row using ANSI's Delete Line (DL) sequence, which
 // shifts whatever is further below up to fill the gap rather than just
 // blanking them — otherwise the erased rows would stay behind as a
-// permanent empty gap instead of disappearing. It leaves the cursor
-// back on its starting row.
+// permanent empty gap instead of disappearing. It leaves the cursor back
+// at exactly its starting row and column.
+//
+// DL doesn't just delete lines: per ECMA-48 (and every terminal tested —
+// xterm, Terminal.app, pyte), it also does an implicit carriage return,
+// resetting the cursor to column 0. A plain cursor-down/up pair around it
+// doesn't undo that, so this wraps the whole thing in a cursor
+// save/restore (DECSC/DECRC, \x1b7 and \x1b8) instead of trying to
+// re-derive the column afterward.
 func eraseLinesBelow(out io.Writer, n int) {
 	if n <= 0 {
 		return
 	}
-	fmt.Fprintf(out, "\x1b[1B\x1b[%dM\x1b[1A", n) //nolint:errcheck
+	fmt.Fprintf(out, "\x1b7\x1b[1B\x1b[%dM\x1b8", n) //nolint:errcheck
 }
 
 // clearListing erases a completion listing still on screen below the
-// prompt, if any. Called at the top of every completeLine invocation —
-// so typing past a listing, or a later Tab landing on a different,
-// non-listing outcome (a unique match or a prefix extension), cleans it
-// up — and from enterFilter just before Enter/LF reaches
-// term.Terminal's decoder, since submitting the line isn't otherwise
-// routed through completeLine at all and would otherwise run the
-// command right on top of a listing nothing ever cleared.
+// prompt, if any. Registered as term.Terminal's PreKeyCallback in
+// runRawREPL, so it runs before every key — not just ones routed through
+// completeLine/AutoCompleteCallback — which is what cleans up a listing
+// still on screen before, say, a submitted Enter runs a command right on
+// top of it.
 func clearListing() {
 	if lastListingLines > 0 && completionOut != nil {
 		eraseLinesBelow(completionOut, lastListingLines)
@@ -73,11 +87,11 @@ func clearListing() {
 // way it would if this went through term.Terminal's Write (which always
 // erases and redraws the current line around whatever it's given).
 //
-// line and pos are the full line and cursor position completeLine was
-// called with — used with completionPrompt to compute the cursor's
-// current column (assuming, like the rest of completion, that the
-// prompt+line fits on one terminal row without wrapping).
-func printCandidatesBelow(out io.Writer, matches []string, line string, pos int) {
+// The cursor's return column comes from completionTerm.CursorColumn(),
+// which assumes, like the rest of completion, that the prompt+line fits
+// on one terminal row without wrapping (CursorColumn resets to 0 at the
+// start of each wrapped row, same as a real terminal's own cursor).
+func printCandidatesBelow(out io.Writer, matches []string) {
 	listing := candidateList(matches)
 	rows := strings.Count(listing, "\n")
 
@@ -85,8 +99,10 @@ func printCandidatesBelow(out io.Writer, matches []string, line string, pos int)
 	b.WriteString("\r\n")
 	b.WriteString(strings.ReplaceAll(listing, "\n", "\r\n"))
 	fmt.Fprintf(&b, "\x1b[%dA", rows+1)
-	if col := utf8.RuneCountInString(completionPrompt) + utf8.RuneCountInString(line[:pos]); col > 0 {
-		fmt.Fprintf(&b, "\x1b[%dC", col)
+	if completionTerm != nil {
+		if col := completionTerm.CursorColumn(); col > 0 {
+			fmt.Fprintf(&b, "\x1b[%dC", col)
+		}
 	}
 	io.WriteString(out, b.String()) //nolint:errcheck
 
@@ -488,7 +504,7 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 		// Ambiguous with nothing new to add: list the candidates instead
 		// of silently doing nothing.
 		if completionOut != nil {
-			printCandidatesBelow(completionOut, matches, line, pos)
+			printCandidatesBelow(completionOut, matches)
 		}
 		return "", 0, false
 	}

@@ -89,6 +89,7 @@ func runRawREPL(ctx *ExecCtx) {
 	t.AutoCompleteCallback = completeLine
 	t.PreKeyCallback = func(string, int, rune) { clearListing() }
 	completionOut = ctx.Out
+	completionTerm = t
 
 	termCtx := &ExecCtx{
 		In:       in,
@@ -118,8 +119,7 @@ func runRawREPL(ctx *ExecCtx) {
 	InitScripting(termCtx)
 
 	for {
-		completionPrompt = JSPrompt()
-		t.SetPrompt(completionPrompt)
+		t.SetPrompt(JSPrompt())
 		line, err := t.ReadLine()
 		lastListingLines = 0
 		if err != nil {

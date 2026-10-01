@@ -21,7 +21,9 @@ scripting.go:36-61 — `gish.print`/`gish.println` are closed over the `ctx` pas
 
 `internal/term` now carries gish's own copy of x/term's `terminal.go` (see its package doc comment). `ctrlCFilter` (ctrlc.go) and `enterFilter` (complete.go) are gone: Ctrl+C is a real `case keyCtrlC` in `handleKey`'s switch now (fixing the old `t.remainder` bug as a side effect, since it no longer returns early from `readLine` and skips its bookkeeping), and a new `PreKeyCallback` field fires for every decoded key — including ones, like Enter, that `AutoCompleteCallback` never sees — so `complete.go` no longer needs to intercept raw bytes to clear a stale listing.
 
-Still open: arrows, Home/End, Delete, Alt+Left/Right, function keys/PageUp/PageDown/Insert still collapse to `keyUnknown` in `bytesToKey`, and completion still guesses the cursor's screen column from `completionPrompt`'s length rather than reading `t.line`/`t.pos` directly. Both are straightforward now that we own the file — just not needed yet.
+Completion also no longer guesses the cursor's screen column from `completionPrompt`'s length: `term.Terminal` exposes a `CursorColumn()` accessor now, and `printCandidatesBelow` reads the real position straight off it.
+
+Still open: arrows, Home/End, Delete, Alt+Left/Right, function keys/PageUp/PageDown/Insert still collapse to `keyUnknown` in `bytesToKey`. Straightforward now that we own the file — just not needed yet.
 
 ### Tests mutate global state without cleanup guards
 

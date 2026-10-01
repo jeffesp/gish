@@ -924,6 +924,17 @@ func (t *Terminal) readLine() (line string, err error) {
 	}
 }
 
+// CursorColumn returns the terminal column (0-based, from the left edge)
+// the cursor is currently drawn at, prompt included. Safe to call from
+// AutoCompleteCallback or PreKeyCallback, both of which run with t.lock
+// released.
+func (t *Terminal) CursorColumn() int {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	return t.cursorX
+}
+
 // SetPrompt sets the prompt to be used when reading subsequent lines.
 func (t *Terminal) SetPrompt(prompt string) {
 	t.lock.Lock()

@@ -235,6 +235,12 @@ go build -trimpath -ldflags "-s -w -X main.Version=v1.0.0" -o gish .
 gish --version   # or gish -v
 ```
 
-The GitHub Actions release workflow (`.github/workflows/release.yml`) builds static binaries for
-linux/darwin/windows on amd64 and arm64 when a `v*` tag is pushed, and attaches the archives
-plus `SHA256SUMS.txt` to the release.
+Releases are built with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). When a `v*` tag is
+pushed, the release workflow (`.github/workflows/release.yml`) builds static binaries for
+linux/darwin/windows on amd64 and arm64 and attaches the archives, `.deb` and `.rpm` packages, and
+`SHA256SUMS.txt` to the GitHub release. The Linux packages install `/usr/bin/gish` and register it in
+`/etc/shells`. To try a release build locally:
+
+```
+goreleaser release --snapshot --clean
+```

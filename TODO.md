@@ -17,13 +17,13 @@ builtins.go:108 / scripting.go:169 — The `title` builtin and `gish.title()` wr
 
 scripting.go:36-61 — `gish.print`/`gish.println` are closed over the `ctx` passed to `setupAPI`. If you register a command, then later pipe it (e.g., `mycommand | grep x`), the callback's `gish.println` still writes to the original terminal writer, not the pipe. The command itself receives a `bCtx` with the correct pipe, but the gish.print functions ignore it.
 
-### Completion's Ctrl+C/Enter handling works by pre-filtering raw bytes, not decoded keys — may need to fork x/term
+### ~~Completion's Ctrl+C/Enter handling works by pre-filtering raw bytes~~ — resolved by forking x/term's terminal.go
 
-ctrlc.go (`ctrlCFilter`) and complete.go (`enterFilter`) both wrap the raw input reader and act on specific bytes (`0x03`, `\r`/`\n`) *before* x/term's own decoder (`bytesToKey` in terminal.go) ever sees them. This was necessary because x/term gives no hook into decoded keys: Ctrl+C's "return io.EOF immediately" path has a real bug (it never advances `t.remainder`, so the next `ReadLine` replays the same stale byte forever — see the ctrlCFilter doc comment), and Enter is handled inline in `handleKey`'s switch with no way to intercept it via `AutoCompleteCallback`.
+`internal/term` now carries gish's own copy of x/term's `terminal.go` (see its package doc comment). `ctrlCFilter` (ctrlc.go) and `enterFilter` (complete.go) are gone: Ctrl+C is a real `case keyCtrlC` in `handleKey`'s switch now (fixing the old `t.remainder` bug as a side effect, since it no longer returns early from `readLine` and skips its bookkeeping), and a new `PreKeyCallback` field fires for every decoded key — including ones, like Enter, that `AutoCompleteCallback` never sees — so `complete.go` no longer needs to intercept raw bytes to clear a stale listing.
 
-This only works because both triggers are single, unambiguous control bytes. It does not extend to any multi-byte ESC-prefixed key — arrows, Home/End, Delete, Alt+Left/Right, function keys/PageUp/PageDown/Insert (which all collapse to `keyUnknown` today) — since recognizing those reliably would mean duplicating `bytesToKey`'s parsing ourselves.
+Completion also no longer guesses the cursor's screen column from `completionPrompt`'s length: `term.Terminal` exposes a `CursorColumn()` accessor now, and `printCandidatesBelow` reads the real position straight off it.
 
-Two options if/when we need to react to one of those: generalize the current pattern (a byte→handler registry instead of one bespoke `io.Reader` wrapper per case), or fork x/term to get a real decoded-key hook (which would also let us fix the `t.remainder` bug at the source and use `t.line`/`t.pos` directly instead of completion's `completionPrompt`-length-based column guess). Holding off on either until we actually hit a case the byte-level approach can't handle — not worth the added complexity or (for the fork) ongoing maintenance of a diverging copy on a hypothetical need.
+Still open: arrows, Home/End, Delete, and Alt+Left/Right are already decoded by `bytesToKey` (and were before the fork). What's actually still unhandled — PageUp/PageDown/Insert (`\x1b[5~`/`\x1b[6~`/`\x1b[2~`) and function keys — fall through to the generic ending-byte scan and collapse to `keyUnknown`. Straightforward to add now that we own the file — just not needed yet.
 
 ### Tests mutate global state without cleanup guards
 

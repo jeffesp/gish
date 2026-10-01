@@ -78,6 +78,21 @@ type Terminal struct {
 	// This will be disabled during ReadPassword.
 	AutoCompleteCallback func(line string, pos int, key rune) (newLine string, newPos int, ok bool)
 
+	// PreKeyCallback, if non-nil, is called first thing in handleKey for
+	// every decoded key, including keys Terminal binds itself (Enter,
+	// Ctrl+C, arrows, Ctrl+A/E/K/U/W/T, etc.) — unlike
+	// AutoCompleteCallback, which only fires for keys with no built-in
+	// binding. It can't replace the line or intercept the key; it exists
+	// so a caller can react to every keystroke (e.g. clearing something
+	// drawn outside the line) without duplicating which keys Terminal
+	// itself binds.
+	//
+	// Skipped for bracketed-paste content (except the Enter/LF that
+	// still submits the line), so a large paste doesn't fire it once per
+	// pasted character. Disabled during ReadPassword, like
+	// AutoCompleteCallback.
+	PreKeyCallback func(line string, pos int, key rune)
+
 	// Escape contains a pointer to the escape codes for this terminal.
 	// It's always a valid pointer, although the escape codes themselves
 	// may be empty if the terminal doesn't support them.
@@ -515,7 +530,22 @@ func (t *Terminal) historyAdd(entry string) {
 // handleKey processes the given key and, optionally, returns a line of text
 // that the user has entered.
 func (t *Terminal) handleKey(key rune) (line string, ok bool) {
-	if t.pasteActive && key != keyEnter && key != keyLF {
+	// A key is "pasting" if it's bracketed-paste content that gets
+	// inserted literally rather than processed as a binding — Enter/LF
+	// are excluded even during a paste since they still submit the line
+	// below, same as typed.
+	pasting := t.pasteActive && key != keyEnter && key != keyLF
+
+	if t.PreKeyCallback != nil && !pasting {
+		prefix := string(t.line[:t.pos])
+		suffix := string(t.line[t.pos:])
+
+		t.lock.Unlock()
+		t.PreKeyCallback(prefix+suffix, len(prefix), key)
+		t.lock.Lock()
+	}
+
+	if pasting {
 		t.addKeyToLine(key)
 		return
 	}
@@ -635,6 +665,24 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 			t.writeLine(t.line[swap-1:])
 			t.moveCursorToPos(t.pos)
 		}
+	case keyCtrlC:
+		// Abort the current line: echo "^C", start a fresh line, and
+		// reprint the prompt — the usual shell SIGINT behavior of
+		// abandoning the line rather than exiting. Unlike keyCtrlD (an
+		// empty line's EOF, handled in readLine), this deliberately
+		// doesn't return from readLine at all: an early return there
+		// used to skip past readLine's remainder bookkeeping and
+		// permanently wedge the next ReadLine call on the same stale
+		// byte. Handling it here, like any other key, avoids that.
+		t.moveCursorToPos(len(t.line))
+		t.queue([]rune("^C\r\n"))
+		t.line = t.line[:0]
+		t.pos = 0
+		t.cursorX = 0
+		t.cursorY = 0
+		t.maxLine = 0
+		t.queue(t.prompt)
+		t.advanceCursor(visualLength(t.prompt))
 	case keyClearScreen:
 		// Erases the screen and moves the cursor to the home position.
 		t.queue([]rune("\x1b[2J\x1b[H"))
@@ -775,7 +823,8 @@ func (t *Terminal) Write(buf []byte) (n int, err error) {
 // ReadPassword temporarily changes the prompt and reads a password, without
 // echo, from the terminal.
 //
-// The AutoCompleteCallback is disabled during this call.
+// AutoCompleteCallback and PreKeyCallback are both disabled during this
+// call.
 func (t *Terminal) ReadPassword(prompt string) (line string, err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -785,8 +834,11 @@ func (t *Terminal) ReadPassword(prompt string) (line string, err error) {
 	t.echo = false
 	oldAutoCompleteCallback := t.AutoCompleteCallback
 	t.AutoCompleteCallback = nil
+	oldPreKeyCallback := t.PreKeyCallback
+	t.PreKeyCallback = nil
 	defer func() {
 		t.AutoCompleteCallback = oldAutoCompleteCallback
+		t.PreKeyCallback = oldPreKeyCallback
 	}()
 
 	line, err = t.readLine()
@@ -830,9 +882,6 @@ func (t *Terminal) readLine() (line string, err error) {
 					if len(t.line) == 0 {
 						return "", io.EOF
 					}
-				}
-				if key == keyCtrlC {
-					return "", io.EOF
 				}
 				if key == keyPasteStart {
 					t.pasteActive = true
@@ -888,6 +937,41 @@ func (t *Terminal) readLine() (line string, err error) {
 
 		t.remainder = t.inBuf[:n+len(t.remainder)]
 	}
+}
+
+// CursorColumn returns the terminal column (0-based, from the left edge)
+// the cursor is currently drawn at, prompt included. Safe to call from
+// AutoCompleteCallback or PreKeyCallback, both of which run with t.lock
+// released.
+func (t *Terminal) CursorColumn() int {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	return t.cursorX
+}
+
+// CursorOnLastRow reports whether the cursor's current row is the last
+// screen row the prompt+line occupies — i.e. whether every row below the
+// cursor is genuinely blank rather than more of the current line, wrapped
+// by the real terminal's own auto-wrap.
+//
+// A caller that wants to draw something below the cursor (and later
+// erase it) using raw cursor movement — the way completion's candidate
+// listing does — can only do so safely when this is true. Otherwise
+// "below the cursor" is actually mid-line: there's wrapped text there,
+// and drawing over it (or deleting it as if it were scratch space) would
+// corrupt the display.
+func (t *Terminal) CursorOnLastRow() bool {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if t.termWidth <= 0 {
+		return true
+	}
+	promptLen := visualLength(t.prompt)
+	curRow := (promptLen + t.pos) / t.termWidth
+	lastRow := (promptLen + len(t.line)) / t.termWidth
+	return curRow == lastRow
 }
 
 // SetPrompt sets the prompt to be used when reading subsequent lines.

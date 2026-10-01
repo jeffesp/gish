@@ -80,14 +80,15 @@ func TestWordAtCursor(t *testing.T) {
 func TestFileCandidates(t *testing.T) {
 	withTempDir(t, "file.txt", "file.out", "folder/", ".hidden")
 
+	sep := string(filepath.Separator)
 	cases := []struct {
 		partial string
 		want    []string
 	}{
 		{"fi", []string{"file.out", "file.txt"}},
 		{"file.t", []string{"file.txt"}},
-		{"fo", []string{"folder/"}},
-		{"", []string{"file.out", "file.txt", "folder/"}}, // .hidden excluded
+		{"fo", []string{"folder" + sep}},
+		{"", []string{"file.out", "file.txt", "folder" + sep}}, // .hidden excluded
 		{".", []string{".hidden"}},
 		{"nope", nil},
 	}
@@ -200,6 +201,12 @@ func TestShellEscape(t *testing.T) {
 func TestCompleteLine(t *testing.T) {
 	withTempDir(t, "file.txt", "folder/inner.txt")
 
+	// A directory match's trailing separator is spliced back into the
+	// line unquoted, so shellEscape backslash-escapes it just like any
+	// other backslash — doubling it on Windows, where
+	// filepath.Separator is "\".
+	dirSuffix := shellEscape(string(filepath.Separator))
+
 	cases := []struct {
 		name     string
 		line     string
@@ -209,7 +216,7 @@ func TestCompleteLine(t *testing.T) {
 		wantOK   bool
 	}{
 		{"unique file completes with trailing space", "cat fi", 6, "cat file.txt ", 13, true},
-		{"unique dir completes without trailing space", "cat fo", 6, "cat folder/", 11, true},
+		{"unique dir completes without trailing space", "cat fo", 6, "cat folder" + dirSuffix, 10 + len(dirSuffix), true},
 		{"completing inside a dir keeps going", "cat folder/in", 13, "cat folder/inner.txt ", 21, true},
 		{"no matches leaves line untouched", "cat zz", 6, "", 0, false},
 		{"non-tab key is ignored", "cat fi", 6, "", 0, false},
@@ -247,8 +254,8 @@ func TestEraseLinesBelow(t *testing.T) {
 		want string
 	}{
 		{0, ""},
-		{1, "\x1b[1B\x1b[1M\x1b[1A"},
-		{2, "\x1b[1B\x1b[2M\x1b[1A"},
+		{1, "\x1b7\x1b[1B\x1b[1M\x1b8"},
+		{2, "\x1b7\x1b[1B\x1b[2M\x1b8"},
 	}
 	for _, c := range cases {
 		var b strings.Builder
@@ -259,16 +266,28 @@ func TestEraseLinesBelow(t *testing.T) {
 	}
 }
 
+// fakeColumner is a completionTerminal stand-in for tests, which have no
+// real term.Terminal to query. midLine's zero value (false) means
+// CursorOnLastRow reports true — the common case tests care about —
+// without every literal needing to set it explicitly.
+type fakeColumner struct {
+	col     int
+	midLine bool
+}
+
+func (f fakeColumner) CursorColumn() int     { return f.col }
+func (f fakeColumner) CursorOnLastRow() bool { return !f.midLine }
+
 func TestPrintCandidatesBelow(t *testing.T) {
 	withTempDir(t, "pfile.txt", "proj/")
 
 	var out strings.Builder
 	completionOut = &out
-	completionPrompt = "gish> "
+	completionTerm = fakeColumner{col: len("gish> cat p")}
 	lastListingLines = 0
 	t.Cleanup(func() {
 		completionOut = nil
-		completionPrompt = ""
+		completionTerm = nil
 		lastListingLines = 0
 	})
 
@@ -282,7 +301,7 @@ func TestPrintCandidatesBelow(t *testing.T) {
 		t.Errorf(`completeLine(%q) = (%q, _, true), want ok=false (ambiguous)`, line, gotLine)
 	}
 
-	want := "\r\npfile.txt\r\nproj/\r\n\x1b[3A\x1b[11C"
+	want := "\r\npfile.txt\r\nproj" + string(filepath.Separator) + "\r\n\x1b[3A\x1b[11C"
 	if out.String() != want {
 		t.Errorf("printed = %q, want %q", out.String(), want)
 	}
@@ -292,12 +311,47 @@ func TestPrintCandidatesBelow(t *testing.T) {
 
 	// A second Tab on the same still-ambiguous word should erase the
 	// previous listing's 2 lines before printing the new one in its
-	// place, rather than stacking a second copy underneath.
+	// place, rather than stacking a second copy underneath. In the real
+	// REPL, PreKeyCallback (which calls clearListing) fires for every
+	// key immediately before AutoCompleteCallback runs for that same
+	// key; simulate that pairing here since this test calls completeLine
+	// directly.
 	out.Reset()
+	clearListing()
 	completeLine(line, len(line), '\t')
-	wantSecond := "\x1b[1B\x1b[2M\x1b[1A" + want
+	wantSecond := "\x1b7\x1b[1B\x1b[2M\x1b8" + want
 	if out.String() != wantSecond {
 		t.Errorf("second printed = %q, want %q", out.String(), wantSecond)
+	}
+}
+
+// TestPrintCandidatesBelowSkipsMidLine guards against a real corruption
+// bug: if the cursor isn't on the line's last screen row (e.g. the line
+// wraps and the cursor was Left-arrowed back into an earlier row),
+// everything below the cursor is actually more of the wrapped line, not
+// blank space. Printing a listing there overwrites it — confirmed against
+// a real terminal (a pty driven through a VT100 emulator) before this
+// guard existed.
+func TestPrintCandidatesBelowSkipsMidLine(t *testing.T) {
+	withTempDir(t, "pfile.txt", "proj/")
+
+	var out strings.Builder
+	completionOut = &out
+	completionTerm = fakeColumner{midLine: true}
+	lastListingLines = 5 // should be left untouched, not reset to 0
+	t.Cleanup(func() {
+		completionOut = nil
+		completionTerm = nil
+		lastListingLines = 0
+	})
+
+	printCandidatesBelow(&out, []string{"pfile.txt", "proj/"})
+
+	if out.Len() != 0 {
+		t.Errorf("printCandidatesBelow wrote %q while mid-line, want nothing", out.String())
+	}
+	if lastListingLines != 5 {
+		t.Errorf("lastListingLines = %d, want unchanged 5", lastListingLines)
 	}
 }
 
@@ -315,7 +369,7 @@ func TestClearListing(t *testing.T) {
 
 	lastListingLines = 3
 	clearListing()
-	want := "\x1b[1B\x1b[3M\x1b[1A"
+	want := "\x1b7\x1b[1B\x1b[3M\x1b8"
 	if out.String() != want {
 		t.Errorf("clearListing erase = %q, want %q", out.String(), want)
 	}
@@ -332,10 +386,8 @@ func TestClearListing(t *testing.T) {
 func TestCompleteLineClearsStaleListing(t *testing.T) {
 	var out strings.Builder
 	completionOut = &out
-	completionPrompt = "gish> "
 	t.Cleanup(func() {
 		completionOut = nil
-		completionPrompt = ""
 		lastListingLines = 0
 	})
 
@@ -355,9 +407,14 @@ func TestCompleteLineClearsStaleListing(t *testing.T) {
 			lastListingLines = 2
 			out.Reset()
 
+			// PreKeyCallback (clearListing) fires before
+			// AutoCompleteCallback (completeLine) for every key in the
+			// real REPL; simulate that pairing since this test calls
+			// completeLine directly.
+			clearListing()
 			completeLine(c.line, len(c.line), '\t')
 
-			wantErase := "\x1b[1B\x1b[2M\x1b[1A"
+			wantErase := "\x1b7\x1b[1B\x1b[2M\x1b8"
 			if got := out.String(); !strings.HasPrefix(got, wantErase) {
 				t.Errorf("completeLine(%q) wrote %q, want it to start with the erase sequence %q", c.line, got, wantErase)
 			}
@@ -386,53 +443,12 @@ func TestCompleteLineDirOnlyCommand(t *testing.T) {
 	}
 
 	// cd is dir-only, so the file is filtered out and "proj/" is unique.
+	// Spliced back unquoted, the separator goes through shellEscape like
+	// any other backslash, doubling it on Windows.
 	gotLine, gotPos, ok := completeLine("cd p", 4, '\t')
-	wantLine := "cd proj/"
+	wantLine := "cd proj" + shellEscape(string(filepath.Separator))
 	if !ok || gotLine != wantLine {
 		t.Errorf(`completeLine("cd p") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
-	}
-}
-
-func TestEnterFilterClearsListing(t *testing.T) {
-	var out strings.Builder
-	completionOut = &out
-	t.Cleanup(func() { completionOut = nil; lastListingLines = 0 })
-
-	cases := []struct {
-		name string
-		in   string
-	}{
-		{"carriage return", "x\r"},
-		{"line feed", "x\n"},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			lastListingLines = 2
-			out.Reset()
-
-			f := &enterFilter{Reader: strings.NewReader(c.in)}
-			buf := make([]byte, len(c.in))
-			if _, err := f.Read(buf); err != nil {
-				t.Fatalf("Read: %v", err)
-			}
-
-			want := "\x1b[1B\x1b[2M\x1b[1A"
-			if out.String() != want {
-				t.Errorf("erase = %q, want %q", out.String(), want)
-			}
-			if lastListingLines != 0 {
-				t.Errorf("lastListingLines = %d, want 0", lastListingLines)
-			}
-		})
-	}
-}
-
-func TestEnterFilterPassesBytesThrough(t *testing.T) {
-	f := &enterFilter{Reader: strings.NewReader("ab\rc")}
-	got := readAll(t, f)
-	if string(got) != "ab\rc" {
-		t.Errorf("got %q, want %q", got, "ab\rc")
 	}
 }
 

@@ -15,18 +15,17 @@ existing tag-triggered release workflow (`.github/workflows/release.yml`).
 |----------|--------|--------------|
 | macOS | Homebrew cask | tap repo `jeffesp/homebrew-tap` |
 | Linux | `.deb`, `.rpm` | attached to GitHub release |
-| Windows | Scoop manifest, winget manifest | bucket repo `jeffesp/scoop-bucket`; PR to `microsoft/winget-pkgs` |
-| Windows (later) | `.msi` via WiX | GitHub release, only if requested |
+| Windows | Scoop manifest | bucket repo `jeffesp/scoop-bucket` |
 
-Out of scope for now: hosted apt/yum repos, Homebrew core, macOS notarization
-(not needed for brew-downloaded tarballs), Windows code signing.
+Out of scope: winget and MSI (decided not to pursue; Windows users have Scoop
+or the zip), hosted apt/yum repos, Homebrew core, macOS notarization (the cask
+clears quarantine instead), Windows code signing.
 
 ## Tooling
 
 Use GoReleaser to replace the hand-rolled build/package/release steps. One
 `.goreleaser.yaml` covers cross-compilation, archives, checksums, nfpm
-deb/rpm, the Homebrew formula and the Scoop manifest. Winget is submitted
-separately.
+deb/rpm, the Homebrew cask and the Scoop manifest.
 
 ## Steps
 
@@ -69,21 +68,10 @@ workflow passes `TAP_GITHUB_TOKEN` to GoReleaser.
   `scoop bucket add jeffesp https://github.com/jeffesp/scoop-bucket` +
   `scoop install gish`.
 
-### 3. winget
-- Write the manifest (portable zip installer type) and submit a PR to
-  `microsoft/winget-pkgs` for the first release, using `wingetcreate`.
-- Later releases: `wingetcreate update` in the release workflow, or accept
-  the winget-releaser action if it proves low-maintenance.
-
-### 4. MSI (deferred)
-- Only if there is demand. WiX in a `windows-latest` job; needs a stable
-  UpgradeCode GUID, PATH registration, and ideally code signing to avoid
-  SmartScreen warnings.
-
 ## Documentation
-- README: add an Install section (brew, scoop, winget, deb/rpm, manual
+- README: add an Install section (brew, scoop, deb/rpm, manual
   download) and update the release-workflow paragraph.
 
 ## Open questions
 - Package license/maintainer metadata: confirm values for nfpm.
-- Whether Windows arm64 is worth shipping in winget/Scoop at first release.
+- Whether Windows arm64 is worth shipping in Scoop at first release.

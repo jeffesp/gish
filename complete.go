@@ -10,20 +10,21 @@ import (
 	"unicode/utf8"
 )
 
-// cursorColumner is satisfied by *term.Terminal's CursorColumn method.
-// Expressed as an interface, rather than importing gish/internal/term
-// directly, so tests can fake a cursor column without driving a real
-// Terminal through keystrokes.
-type cursorColumner interface {
+// completionTerminal is satisfied by *term.Terminal's CursorColumn and
+// CursorOnLastRow methods. Expressed as an interface, rather than
+// importing gish/internal/term directly, so tests can fake it without
+// driving a real Terminal through keystrokes.
+type completionTerminal interface {
 	CursorColumn() int
+	CursorOnLastRow() bool
 }
 
 // completionTerm, if non-nil, is the raw-mode REPL's term.Terminal,
-// queried for the cursor's actual on-screen column so
-// printCandidatesBelow can return to it after printing a listing. Wired
-// up alongside completionOut in runRawREPL; left nil in tests (which
-// fake it) and in the scanner REPL.
-var completionTerm cursorColumner
+// queried for the cursor's actual on-screen column (so
+// printCandidatesBelow can return to it) and for whether it's safe to
+// draw below the cursor at all. Wired up alongside completionOut in
+// runRawREPL; left nil in tests (which fake it) and in the scanner REPL.
+var completionTerm completionTerminal
 
 // completionOut, if non-nil, is the real terminal that a Tab writes an
 // ambiguous completion's candidate list to. This has to be the real fd,
@@ -87,11 +88,18 @@ func clearListing() {
 // way it would if this went through term.Terminal's Write (which always
 // erases and redraws the current line around whatever it's given).
 //
-// The cursor's return column comes from completionTerm.CursorColumn(),
-// which assumes, like the rest of completion, that the prompt+line fits
-// on one terminal row without wrapping (CursorColumn resets to 0 at the
-// start of each wrapped row, same as a real terminal's own cursor).
+// It only draws anything when completionTerm.CursorOnLastRow() is true.
+// "Below the cursor" is only blank, safe-to-draw-on screen space when
+// the cursor sits on the last row the current line occupies; if the line
+// wraps and the cursor is on an earlier row (e.g. after Left-arrowing
+// back into it), the row below is actually more of the wrapped line, and
+// writing a listing there would overwrite it. In that case this is a
+// silent no-op, same as having nothing new to add.
 func printCandidatesBelow(out io.Writer, matches []string) {
+	if completionTerm != nil && !completionTerm.CursorOnLastRow() {
+		return
+	}
+
 	listing := candidateList(matches)
 	rows := strings.Count(listing, "\n")
 

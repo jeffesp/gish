@@ -950,6 +950,30 @@ func (t *Terminal) CursorColumn() int {
 	return t.cursorX
 }
 
+// CursorOnLastRow reports whether the cursor's current row is the last
+// screen row the prompt+line occupies — i.e. whether every row below the
+// cursor is genuinely blank rather than more of the current line, wrapped
+// by the real terminal's own auto-wrap.
+//
+// A caller that wants to draw something below the cursor (and later
+// erase it) using raw cursor movement — the way completion's candidate
+// listing does — can only do so safely when this is true. Otherwise
+// "below the cursor" is actually mid-line: there's wrapped text there,
+// and drawing over it (or deleting it as if it were scratch space) would
+// corrupt the display.
+func (t *Terminal) CursorOnLastRow() bool {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	if t.termWidth <= 0 {
+		return true
+	}
+	promptLen := visualLength(t.prompt)
+	curRow := (promptLen + t.pos) / t.termWidth
+	lastRow := (promptLen + len(t.line)) / t.termWidth
+	return curRow == lastRow
+}
+
 // SetPrompt sets the prompt to be used when reading subsequent lines.
 func (t *Terminal) SetPrompt(prompt string) {
 	t.lock.Lock()

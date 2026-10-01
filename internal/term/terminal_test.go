@@ -211,3 +211,45 @@ func TestCursorColumn(t *testing.T) {
 		}
 	}
 }
+
+func TestCursorOnLastRow(t *testing.T) {
+	tm, in, _ := newTestTerminal("p> ") // 3-column prompt
+	tm.SetSize(10, 24)                  // narrow enough to force a wrap
+
+	type observation struct {
+		key    rune
+		onLast bool
+	}
+	var got []observation
+	tm.PreKeyCallback = func(_ string, _ int, key rune) {
+		got = append(got, observation{key, tm.CursorOnLastRow()})
+	}
+
+	// "p> " (3) + "abcdefghij" (10) = 13 columns, wrapping across two
+	// 10-column rows. Ctrl+A (Home) jumps to the start — row 0, not the
+	// last row — and Ctrl+E (End) jumps back to the end.
+	sendAsync(in, "abcdefghij\x01\x05\r")
+	line, err := tm.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	if line != "abcdefghij" {
+		t.Fatalf("line = %q, want %q", line, "abcdefghij")
+	}
+
+	want := []observation{
+		{'a', true}, {'b', true}, {'c', true}, {'d', true}, {'e', true},
+		{'f', true}, {'g', true}, {'h', true}, {'i', true}, {'j', true},
+		{keyHome, true},  // observed before Home moves the cursor: still at the end
+		{keyEnd, false},  // observed before End moves the cursor: now at the start (row 0)
+		{keyEnter, true}, // observed before Enter: back at the end
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d observations %+v, want %d %+v", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("observation %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

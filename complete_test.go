@@ -259,11 +259,17 @@ func TestEraseLinesBelow(t *testing.T) {
 	}
 }
 
-// fakeColumner is a cursorColumner stand-in for tests, which have no real
-// term.Terminal to query.
-type fakeColumner struct{ col int }
+// fakeColumner is a completionTerminal stand-in for tests, which have no
+// real term.Terminal to query. midLine's zero value (false) means
+// CursorOnLastRow reports true — the common case tests care about —
+// without every literal needing to set it explicitly.
+type fakeColumner struct {
+	col     int
+	midLine bool
+}
 
-func (f fakeColumner) CursorColumn() int { return f.col }
+func (f fakeColumner) CursorColumn() int     { return f.col }
+func (f fakeColumner) CursorOnLastRow() bool { return !f.midLine }
 
 func TestPrintCandidatesBelow(t *testing.T) {
 	withTempDir(t, "pfile.txt", "proj/")
@@ -309,6 +315,36 @@ func TestPrintCandidatesBelow(t *testing.T) {
 	wantSecond := "\x1b7\x1b[1B\x1b[2M\x1b8" + want
 	if out.String() != wantSecond {
 		t.Errorf("second printed = %q, want %q", out.String(), wantSecond)
+	}
+}
+
+// TestPrintCandidatesBelowSkipsMidLine guards against a real corruption
+// bug: if the cursor isn't on the line's last screen row (e.g. the line
+// wraps and the cursor was Left-arrowed back into an earlier row),
+// everything below the cursor is actually more of the wrapped line, not
+// blank space. Printing a listing there overwrites it — confirmed against
+// a real terminal (a pty driven through a VT100 emulator) before this
+// guard existed.
+func TestPrintCandidatesBelowSkipsMidLine(t *testing.T) {
+	withTempDir(t, "pfile.txt", "proj/")
+
+	var out strings.Builder
+	completionOut = &out
+	completionTerm = fakeColumner{midLine: true}
+	lastListingLines = 5 // should be left untouched, not reset to 0
+	t.Cleanup(func() {
+		completionOut = nil
+		completionTerm = nil
+		lastListingLines = 0
+	})
+
+	printCandidatesBelow(&out, []string{"pfile.txt", "proj/"})
+
+	if out.Len() != 0 {
+		t.Errorf("printCandidatesBelow wrote %q while mid-line, want nothing", out.String())
+	}
+	if lastListingLines != 5 {
+		t.Errorf("lastListingLines = %d, want unchanged 5", lastListingLines)
 	}
 }
 

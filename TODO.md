@@ -31,9 +31,9 @@ scripting_test.go — Tests call `InitScripting` which replaces the global `jsVM
 
 ## Missing Features (acknowledged in README/plans)
 
-### No ~ in cd
+### ~~No ~ in cd~~ — resolved
 
-Probably need to support it not only for `cd`, but that is where I have noticed it most.
+`expandTildes` (token.go) expands a leading `~`, `~/...`, or `~user` in unquoted words for every command, before variable and glob expansion (so `~/*.go` globs, and a `$VAR` whose value starts with `~` stays literal). Path completion also understands `~/` (see `fileCandidates`). Not supported: `~+`/`~-`, and `~` or `~user` inside assignments or after `:`.
 
 ### Prompt function can fail
 

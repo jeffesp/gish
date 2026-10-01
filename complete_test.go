@@ -470,3 +470,25 @@ func TestCommandForWord(t *testing.T) {
 		}
 	}
 }
+
+func TestFileCandidatesTilde(t *testing.T) {
+	home := t.TempDir()
+	for _, name := range []string{"Docs/", "Downloads/", "doc.txt"} {
+		p := filepath.Join(home, name)
+		if strings.HasSuffix(name, "/") {
+			os.Mkdir(p, 0o755) //nolint:errcheck
+		} else {
+			os.WriteFile(p, nil, 0o644) //nolint:errcheck
+		}
+	}
+	t.Setenv("HOME", home)
+
+	got := fileCandidates("~/Do")
+	want := []string{"~/Docs/", "~/Downloads/"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("fileCandidates(~/Do) = %v, want %v", got, want)
+	}
+	if got := fileCandidates("~"); len(got) != 1 || got[0] != "~/" {
+		t.Errorf("fileCandidates(~) = %v, want [~/]", got)
+	}
+}

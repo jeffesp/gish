@@ -222,7 +222,12 @@ func wordAtCursor(line string, pos int) word {
 // with ".", mirroring the dotfile rule in expandGlobs (token.go).
 func fileCandidates(partial string) []string {
 	dirPart, basePart := filepath.Split(partial)
-	readDir := dirPart
+	if partial == "~" {
+		return []string{"~" + string(filepath.Separator)}
+	}
+	// Results keep the typed (unexpanded) dirPart, but the directory
+	// itself has to be read from its real location.
+	readDir := expandTilde(dirPart)
 	if readDir == "" {
 		readDir = "."
 	}

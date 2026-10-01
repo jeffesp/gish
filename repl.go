@@ -39,6 +39,7 @@ func execLine(line string, ctx *ExecCtx) {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
 	}
+	tokens = expandTildes(tokens)
 	tokens = expandVars(tokens)
 	tokens = expandGlobs(tokens)
 	tokens, err = expandAliases(tokens)

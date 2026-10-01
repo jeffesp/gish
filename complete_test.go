@@ -292,8 +292,13 @@ func TestPrintCandidatesBelow(t *testing.T) {
 
 	// A second Tab on the same still-ambiguous word should erase the
 	// previous listing's 2 lines before printing the new one in its
-	// place, rather than stacking a second copy underneath.
+	// place, rather than stacking a second copy underneath. In the real
+	// REPL, PreKeyCallback (which calls clearListing) fires for every
+	// key immediately before AutoCompleteCallback runs for that same
+	// key; simulate that pairing here since this test calls completeLine
+	// directly.
 	out.Reset()
+	clearListing()
 	completeLine(line, len(line), '\t')
 	wantSecond := "\x1b[1B\x1b[2M\x1b[1A" + want
 	if out.String() != wantSecond {
@@ -355,6 +360,11 @@ func TestCompleteLineClearsStaleListing(t *testing.T) {
 			lastListingLines = 2
 			out.Reset()
 
+			// PreKeyCallback (clearListing) fires before
+			// AutoCompleteCallback (completeLine) for every key in the
+			// real REPL; simulate that pairing since this test calls
+			// completeLine directly.
+			clearListing()
 			completeLine(c.line, len(c.line), '\t')
 
 			wantErase := "\x1b[1B\x1b[2M\x1b[1A"
@@ -390,49 +400,6 @@ func TestCompleteLineDirOnlyCommand(t *testing.T) {
 	wantLine := "cd proj/"
 	if !ok || gotLine != wantLine {
 		t.Errorf(`completeLine("cd p") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
-	}
-}
-
-func TestEnterFilterClearsListing(t *testing.T) {
-	var out strings.Builder
-	completionOut = &out
-	t.Cleanup(func() { completionOut = nil; lastListingLines = 0 })
-
-	cases := []struct {
-		name string
-		in   string
-	}{
-		{"carriage return", "x\r"},
-		{"line feed", "x\n"},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			lastListingLines = 2
-			out.Reset()
-
-			f := &enterFilter{Reader: strings.NewReader(c.in)}
-			buf := make([]byte, len(c.in))
-			if _, err := f.Read(buf); err != nil {
-				t.Fatalf("Read: %v", err)
-			}
-
-			want := "\x1b[1B\x1b[2M\x1b[1A"
-			if out.String() != want {
-				t.Errorf("erase = %q, want %q", out.String(), want)
-			}
-			if lastListingLines != 0 {
-				t.Errorf("lastListingLines = %d, want 0", lastListingLines)
-			}
-		})
-	}
-}
-
-func TestEnterFilterPassesBytesThrough(t *testing.T) {
-	f := &enterFilter{Reader: strings.NewReader("ab\rc")}
-	got := readAll(t, f)
-	if string(got) != "ab\rc" {
-		t.Errorf("got %q, want %q", got, "ab\rc")
 	}
 }
 

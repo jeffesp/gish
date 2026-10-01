@@ -78,6 +78,16 @@ type Terminal struct {
 	// This will be disabled during ReadPassword.
 	AutoCompleteCallback func(line string, pos int, key rune) (newLine string, newPos int, ok bool)
 
+	// PreKeyCallback, if non-nil, is called first thing in handleKey for
+	// every decoded key, including keys Terminal binds itself (Enter,
+	// Ctrl+C, arrows, Ctrl+A/E/K/U/W/T, etc.) — unlike
+	// AutoCompleteCallback, which only fires for keys with no built-in
+	// binding. It can't replace the line or intercept the key; it exists
+	// so a caller can react to every keystroke (e.g. clearing something
+	// drawn outside the line) without duplicating which keys Terminal
+	// itself binds.
+	PreKeyCallback func(line string, pos int, key rune)
+
 	// Escape contains a pointer to the escape codes for this terminal.
 	// It's always a valid pointer, although the escape codes themselves
 	// may be empty if the terminal doesn't support them.
@@ -515,6 +525,15 @@ func (t *Terminal) historyAdd(entry string) {
 // handleKey processes the given key and, optionally, returns a line of text
 // that the user has entered.
 func (t *Terminal) handleKey(key rune) (line string, ok bool) {
+	if t.PreKeyCallback != nil {
+		prefix := string(t.line[:t.pos])
+		suffix := string(t.line[t.pos:])
+
+		t.lock.Unlock()
+		t.PreKeyCallback(prefix+suffix, len(prefix), key)
+		t.lock.Lock()
+	}
+
 	if t.pasteActive && key != keyEnter && key != keyLF {
 		t.addKeyToLine(key)
 		return
@@ -635,6 +654,24 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 			t.writeLine(t.line[swap-1:])
 			t.moveCursorToPos(t.pos)
 		}
+	case keyCtrlC:
+		// Abort the current line: echo "^C", start a fresh line, and
+		// reprint the prompt — the usual shell SIGINT behavior of
+		// abandoning the line rather than exiting. Unlike keyCtrlD (an
+		// empty line's EOF, handled in readLine), this deliberately
+		// doesn't return from readLine at all: an early return there
+		// used to skip past readLine's remainder bookkeeping and
+		// permanently wedge the next ReadLine call on the same stale
+		// byte. Handling it here, like any other key, avoids that.
+		t.moveCursorToPos(len(t.line))
+		t.queue([]rune("^C\r\n"))
+		t.line = t.line[:0]
+		t.pos = 0
+		t.cursorX = 0
+		t.cursorY = 0
+		t.maxLine = 0
+		t.queue(t.prompt)
+		t.advanceCursor(visualLength(t.prompt))
 	case keyClearScreen:
 		// Erases the screen and moves the cursor to the home position.
 		t.queue([]rune("\x1b[2J\x1b[H"))
@@ -830,9 +867,6 @@ func (t *Terminal) readLine() (line string, err error) {
 					if len(t.line) == 0 {
 						return "", io.EOF
 					}
-				}
-				if key == keyCtrlC {
-					return "", io.EOF
 				}
 				if key == keyPasteStart {
 					t.pasteActive = true

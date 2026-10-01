@@ -444,11 +444,12 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 
 // completeLine is the AutoCompleteCallback hook for the raw-mode REPL's
 // term.Terminal. It fires for any key not already bound by its own
-// key-handling switch — which includes every plain printable character
-// typed, not just Tab ('\t'), so that clearListing runs (and cleans up
-// a stale listing) as soon as the user keeps typing past one, not only
-// on another Tab. See plans/unlikely/possible-readline.md for the hook
-// point and plans/tab-completion.md for the completion design.
+// key-handling switch, but only does anything on Tab ('\t') — clearing a
+// stale listing on every other keystroke is PreKeyCallback's job
+// (registered separately in runRawREPL), since that fires for every key
+// including ones, like Enter, that this callback never sees. See
+// plans/unlikely/possible-readline.md for the hook point and
+// plans/tab-completion.md for the completion design.
 //
 // For now every position is completed as a filesystem path, including
 // command position — no builtin/alias/$PATH lookup yet.
@@ -456,8 +457,6 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 // Returning ok=false leaves the line untouched and lets x/term handle the
 // key normally (a no-op for Tab, since it isn't otherwise bound).
 func completeLine(line string, pos int, key rune) (string, int, bool) {
-	clearListing()
-
 	if key != '\t' {
 		return "", 0, false
 	}
@@ -495,30 +494,4 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 	}
 
 	return spliceCompletion(line, pos, w, prefix, "")
-}
-
-// enterFilter wraps a reader and, just before a raw '\r' or '\n' byte
-// (Enter) reaches term.Terminal's decoder, calls clearListing. Enter is
-// handled directly inside term.Terminal's key-handling switch, never
-// through completeLine/AutoCompleteCallback, so without this nothing
-// would clear a completion listing still on screen before the
-// submitted line runs and prints output right on top of it.
-//
-// Like ctrlCFilter, this relies on term.Terminal.readLine unlocking its
-// mutex around the Read call this wraps, which makes calling
-// clearListing (and its write through completionOut) here safe rather
-// than reentrant.
-type enterFilter struct {
-	io.Reader
-}
-
-func (f *enterFilter) Read(p []byte) (int, error) {
-	n, err := f.Reader.Read(p)
-	for _, b := range p[:n] {
-		if b == '\r' || b == '\n' {
-			clearListing()
-			break
-		}
-	}
-	return n, err
 }

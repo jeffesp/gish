@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"os"
 	"os/exec"
 )
 
@@ -11,6 +12,17 @@ type ExecCtx struct {
 	ErrOut      io.Writer
 	SystemIO    *ExecCtx
 	RestoreTerm func() func() // restore terminal; returns function to re-enter raw mode
+
+	// Set by Pipeline.Exec for each stage. Pgid points at the pipeline's
+	// shared process group id (0 until its first external stage starts and
+	// becomes the leader); TTY, if non-nil, is the terminal the leader's
+	// group should take as its foreground group.
+	Pgid *int
+	TTY  *os.File
+
+	// OnStop, if set, runs when the command is stopped, just before its
+	// process group is killed.
+	OnStop func()
 }
 
 func (ctx *ExecCtx) WireCmd(cmd *exec.Cmd) {

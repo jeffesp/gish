@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"runtime"
@@ -342,4 +343,76 @@ func TestPipelineClosesPipeFds(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPipelineStagesShareProcessGroup: every external stage joins one
+// process group (so the pipeline can be killed and handed the terminal as a
+// unit), and that group is not gish's own.
+func TestPipelineStagesShareProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process groups are POSIX-only")
+	}
+	requiresSh(t)
+	dir := t.TempDir()
+	pgidOf := func(name string) string {
+		return "ps -o pgid= -p $$ > " + dir + "/" + name
+	}
+	pipeline := &Pipeline{Stages: []*Command{
+		{Tokens: []Token{token("sh"), token("-c"), token(pgidOf("a") + "; ps -o pgid= -p $PPID > " + dir + "/own; echo x")}},
+		{Tokens: []Token{token("sh"), token("-c"), token("cat >/dev/null; " + pgidOf("b"))}},
+	}}
+	if err := pipeline.Exec(pipelineCtx()); err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+
+	read := func(name string) string {
+		b, err := os.ReadFile(dir + "/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	a, b := read("a"), read("b")
+	if a != b {
+		t.Errorf("stages are in different process groups: %s vs %s", a, b)
+	}
+	if own := read("own"); a == own {
+		t.Errorf("stages share gish's own process group %s", own)
+	}
+}
+
+// TestStoppedCommandIsKilled: a command that stops itself (as Ctrl+Z would
+// stop it) must not hang gish. With no job control to resume it, it is
+// killed and reported, for both a lone command and a pipeline stage.
+func TestStoppedCommandIsKilled(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("stop detection is only implemented on linux and darwin")
+	}
+	requiresSh(t)
+	stop := func() *Command {
+		return &Command{Tokens: []Token{token("sh"), token("-c"), token("kill -STOP $$; sleep 10")}}
+	}
+	run := func(exe Executable) error {
+		errCh := make(chan error, 1)
+		go func() { errCh <- exe.Exec(pipelineCtx()) }()
+		select {
+		case err := <-errCh:
+			return err
+		case <-time.After(5 * time.Second):
+			t.Fatal("hung: stopped command was not detected")
+			return nil
+		}
+	}
+
+	t.Run("command", func(t *testing.T) {
+		if err := run(stop()); !errors.Is(err, errStopped) {
+			t.Errorf("err = %v, want errStopped", err)
+		}
+	})
+	t.Run("pipeline stage", func(t *testing.T) {
+		err := run(&Pipeline{Stages: []*Command{stop(), {Tokens: []Token{token("cat")}}}})
+		if !errors.Is(err, errStopped) {
+			t.Errorf("err = %v, want errStopped", err)
+		}
+	})
 }

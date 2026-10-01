@@ -2,7 +2,9 @@ package main
 
 import (
 	"os"
+	"os/user"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -170,5 +172,46 @@ func TestTokenizeEscapes(t *testing.T) {
 		if !tokensEqual(toks, c.want) {
 			t.Errorf("%q: got %v, want %v", c.input, toks, c.want)
 		}
+	}
+}
+
+func TestExpandTilde(t *testing.T) {
+	t.Setenv("HOME", "/home/me")
+	cur, err := user.Current()
+	if err != nil {
+		t.Skip("no current user:", err)
+	}
+
+	cases := []struct{ in, want string }{
+		{"~", "/home/me"},
+		{"~/src", "/home/me/src"},
+		{"a~", "a~"},
+		{"/x/~", "/x/~"},
+		{"~gish-no-such-user", "~gish-no-such-user"},
+		{"~gish-no-such-user/x", "~gish-no-such-user/x"},
+		{"~" + cur.Username + "/x", cur.HomeDir + "/x"},
+	}
+	for _, c := range cases {
+		if got := expandTilde(c.in); got != c.want {
+			t.Errorf("expandTilde(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestExpandTildes(t *testing.T) {
+	t.Setenv("HOME", "/home/me")
+	t.Setenv("TILDE", "~")
+
+	tokens, err := tokenize(`a ~ ~/x '~' "~" \~ ~/\$X $TILDE/y`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens = expandVars(expandTildes(tokens))
+	got := tokenValues(tokens)
+	// The \$ keeps its escape across the shifted prefix; $TILDE's value
+	// isn't tilde-expanded because variables expand after tildes.
+	want := []string{"a", "/home/me", "/home/me/x", "~", "~", "~", "/home/me/$X", "~/y"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -29,6 +31,76 @@ type Token struct {
 	Kind    TokenKind
 	Value   string
 	Escapes []int
+}
+
+// homeDir returns the current user's home directory: $HOME, falling back
+// to the OS's idea of it (Windows and some minimal environments don't set
+// HOME). Returns "" if neither is available.
+func homeDir() string {
+	if dir := os.Getenv("HOME"); dir != "" {
+		return dir
+	}
+	dir, _ := os.UserHomeDir()
+	return dir
+}
+
+// expandTilde expands a leading ~ or ~user in path: "~" and "~/rest" use
+// the current user's home directory, "~name" and "~name/rest" use name's.
+// A path that doesn't start with ~, or names a user that can't be found,
+// is returned unchanged.
+func expandTilde(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	name, rest := path[1:], ""
+	if i := strings.IndexByte(name, '/'); i >= 0 {
+		name, rest = name[:i], name[i:]
+	}
+
+	var home string
+	if name == "" {
+		home = homeDir()
+	} else if u, err := user.Lookup(name); err == nil {
+		home = u.HomeDir
+	}
+	if home == "" {
+		return path
+	}
+	return home + rest
+}
+
+// expandTildes applies expandTilde to each unquoted word whose leading ~
+// wasn't backslash-escaped. It must run before expandVars and expandGlobs,
+// as in bash, so a $VAR whose value starts with ~ stays literal. Escape
+// offsets are shifted to follow the text the replacement moved.
+func expandTildes(tokens []Token) []Token {
+	out := make([]Token, len(tokens))
+	for i, t := range tokens {
+		out[i] = t
+		if t.Kind != TokenWord || !strings.HasPrefix(t.Value, "~") || slices.Contains(t.Escapes, 0) {
+			continue
+		}
+		// Only the text before the first slash names the home directory,
+		// so only escapes after it matter for the shift.
+		expanded := expandTilde(t.Value)
+		if expanded == t.Value {
+			continue
+		}
+		prefixLen := len(t.Value)
+		if j := strings.IndexByte(t.Value, '/'); j >= 0 {
+			prefixLen = j
+		}
+		delta := len(expanded) - len(t.Value)
+		var escapes []int
+		for _, e := range t.Escapes {
+			if e >= prefixLen {
+				e += delta
+			}
+			escapes = append(escapes, e)
+		}
+		out[i] = Token{Kind: TokenWord, Value: expanded, Escapes: escapes}
+	}
+	return out
 }
 
 func expandToken(t Token) Token {

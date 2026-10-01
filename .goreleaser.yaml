@@ -53,3 +53,41 @@ release:
   github:
     owner: jeffesp
     name: gish
+
+homebrew_casks:
+  - name: gish
+    homepage: https://github.com/jeffesp/gish
+    description: A Go-ish shell with JavaScript scripting.
+    license: Apache-2.0
+    repository:
+      owner: jeffesp
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: Jeff Esp
+      email: jeff@todayisthursday.net
+    # The binary is not signed or notarized; without this Gatekeeper blocks it.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/gish"]
+          end
+    caveats: |
+      To use gish as your login shell:
+        echo "#{HOMEBREW_PREFIX}/bin/gish" | sudo tee -a /etc/shells
+        chsh -s #{HOMEBREW_PREFIX}/bin/gish
+
+scoops:
+  - name: gish
+    homepage: https://github.com/jeffesp/gish
+    description: A Go-ish shell with JavaScript scripting.
+    license: Apache-2.0
+    repository:
+      owner: jeffesp
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: Jeff Esp
+      email: jeff@todayisthursday.net

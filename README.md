@@ -222,6 +222,13 @@ d517494 Don't exit on signals
 1725224 add history implementation
 ```
 
+## Installing
+
+- **macOS** (Homebrew): `brew install jeffesp/tap/gish`
+- **Windows** (Scoop): `scoop bucket add jeffesp https://github.com/jeffesp/scoop-bucket` then `scoop install gish`
+- **Linux**: download the `.deb` or `.rpm` from the [releases page](https://github.com/jeffesp/gish/releases)
+- Or download an archive for any platform from the releases page.
+
 ## Building
 
 ```

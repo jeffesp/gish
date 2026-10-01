@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"runtime"
@@ -378,4 +379,40 @@ func TestPipelineStagesShareProcessGroup(t *testing.T) {
 	if own := read("own"); a == own {
 		t.Errorf("stages share gish's own process group %s", own)
 	}
+}
+
+// TestStoppedCommandIsKilled: a command that stops itself (as Ctrl+Z would
+// stop it) must not hang gish. With no job control to resume it, it is
+// killed and reported, for both a lone command and a pipeline stage.
+func TestStoppedCommandIsKilled(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("stop detection is only implemented on linux and darwin")
+	}
+	requiresSh(t)
+	stop := func() *Command {
+		return &Command{Tokens: []Token{token("sh"), token("-c"), token("kill -STOP $$; sleep 10")}}
+	}
+	run := func(exe Executable) error {
+		errCh := make(chan error, 1)
+		go func() { errCh <- exe.Exec(pipelineCtx()) }()
+		select {
+		case err := <-errCh:
+			return err
+		case <-time.After(5 * time.Second):
+			t.Fatal("hung: stopped command was not detected")
+			return nil
+		}
+	}
+
+	t.Run("command", func(t *testing.T) {
+		if err := run(stop()); !errors.Is(err, errStopped) {
+			t.Errorf("err = %v, want errStopped", err)
+		}
+	})
+	t.Run("pipeline stage", func(t *testing.T) {
+		err := run(&Pipeline{Stages: []*Command{stop(), {Tokens: []Token{token("cat")}}}})
+		if !errors.Is(err, errStopped) {
+			t.Errorf("err = %v, want errStopped", err)
+		}
+	})
 }

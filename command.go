@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
+	"syscall"
 )
 
 type Executable interface {
@@ -68,9 +70,21 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 	if leader {
 		*ctx.Pgid = cmd.Process.Pid
 	}
+	var stopped atomic.Bool
+	watchStop(cmd.Process.Pid, func() {
+		stopped.Store(true)
+		if ctx.OnStop != nil {
+			ctx.OnStop()
+		}
+		killProcessGroup(cmd)
+	})
 	return func() error {
 			defer clearCmd()
-			return cmd.Wait()
+			err := cmd.Wait()
+			if stopped.Load() {
+				return errStopped
+			}
+			return err
 		}, func() {
 			// Kills the whole process group, not just cmd's own pid: a
 			// stage like "sh -c '...'" may fork children that inherit
@@ -80,21 +94,62 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 		}
 }
 
+// watchStop calls onStop if the child pid stops (e.g. Ctrl+Z). It returns
+// when the child exits or stops, or if stops can't be detected.
+func watchStop(pid int, onStop func()) {
+	go func() {
+		for {
+			stopped, err := childStopped(pid)
+			if err == syscall.EINTR {
+				continue
+			}
+			if stopped {
+				onStop()
+			}
+			return
+		}
+	}()
+}
+
 func (c *Command) Exec(ctx *ExecCtx) error {
 	if fn, ok := Builtins[c.Name()]; ok {
 		return fn(c, ctx)
 	}
-	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
-	clearCmd := SetCurrentCmd(cmd)
-	defer clearCmd()
-
-	ctx.WireCmd(cmd)
 	if ctx.RestoreTerm != nil {
 		reenter := ctx.RestoreTerm()
 		defer reenter()
 	}
-	return cmd.Run()
+
+	// Run like a one-stage pipeline: in a process group of its own that
+	// holds the foreground when stdin is a terminal, so a Ctrl+Z is seen by
+	// the stop watcher rather than suspending gish along with the child.
+	sys := ctx
+	if ctx.SystemIO != nil {
+		sys = ctx.SystemIO
+	}
+	var pgid int
+	tty := terminalFile(sys.In)
+	defer func() {
+		if pgid != 0 && tty != nil {
+			reclaimTerminal(tty)
+		}
+	}()
+	wait, _ := c.Start(&ExecCtx{In: sys.In, Out: sys.Out, ErrOut: sys.ErrOut, Pgid: &pgid, TTY: tty})
+	return wait()
 }
+
+// terminalFile returns r as an *os.File if it is a terminal, else nil.
+func terminalFile(r io.Reader) *os.File {
+	if f, ok := r.(*os.File); ok && isTerminal(f) {
+		return f
+	}
+	return nil
+}
+
+// errStopped is returned for a command that was stopped (Ctrl+Z). gish has
+// no job control, so a stopped command is killed rather than left behind
+// with nothing able to resume it.
+var errStopped = errors.New("stopped (suspending is not supported, killed)")
 
 type Pipeline struct {
 	Stages   []*Command
@@ -146,10 +201,7 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	// stopped by SIGTTIN/SIGTTOU, and Ctrl+C reaches the whole pipeline.
 	// Take the terminal back for gish once every stage has finished.
 	var pgid int
-	var tty *os.File
-	if f, ok := sysIn.(*os.File); ok && isTerminal(f) {
-		tty = f
-	}
+	tty := terminalFile(sysIn)
 	defer func() {
 		if pgid != 0 && tty != nil {
 			reclaimTerminal(tty)
@@ -157,6 +209,14 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	}()
 
 	stages := make([]pipelineStage, len(p.Stages))
+	var (
+		mu     sync.Mutex
+		alive  = make([]bool, len(stages))
+		killed = make([]bool, len(stages))
+	)
+	for i := range alive {
+		alive[i] = true
+	}
 	var nextIn io.Reader = sysIn
 	var prevPR *os.File // read end of the previous pipe — this stage's stdin
 	for i, cmd := range p.Stages {
@@ -165,6 +225,21 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 			ErrOut: sysErrOut,
 			Pgid:   &pgid,
 			TTY:    tty,
+			// A stopped stage gets its whole group killed, which makes
+			// its siblings die too. Mark them as collateral first so
+			// they can't report "killed" ahead of the stop itself, and
+			// take every stage out of the running so a sibling's
+			// collateral failure can't mark the stopped stage as killed.
+			OnStop: func() {
+				mu.Lock()
+				defer mu.Unlock()
+				for j := range alive {
+					if alive[j] && j != i {
+						killed[j] = true
+					}
+					alive[j] = false
+				}
+			},
 		}
 		var pr, pw *os.File
 		if i == len(p.Stages)-1 {
@@ -220,14 +295,6 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 	// stage feeding them dies.
 	errs := make([]error, len(stages))
 	done := make(chan int, len(stages))
-	var (
-		mu     sync.Mutex
-		alive  = make([]bool, len(stages))
-		killed = make([]bool, len(stages))
-	)
-	for i := range alive {
-		alive[i] = true
-	}
 	for i := range stages {
 		go func(i int) {
 			errs[i] = stages[i].wait()

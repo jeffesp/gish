@@ -19,6 +19,10 @@ type ExecCtx struct {
 	// group should take as its foreground group.
 	Pgid *int
 	TTY  *os.File
+
+	// OnStop, if set, runs when the command is stopped, just before its
+	// process group is killed.
+	OnStop func()
 }
 
 func (ctx *ExecCtx) WireCmd(cmd *exec.Cmd) {

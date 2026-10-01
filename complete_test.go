@@ -80,14 +80,15 @@ func TestWordAtCursor(t *testing.T) {
 func TestFileCandidates(t *testing.T) {
 	withTempDir(t, "file.txt", "file.out", "folder/", ".hidden")
 
+	sep := string(filepath.Separator)
 	cases := []struct {
 		partial string
 		want    []string
 	}{
 		{"fi", []string{"file.out", "file.txt"}},
 		{"file.t", []string{"file.txt"}},
-		{"fo", []string{"folder/"}},
-		{"", []string{"file.out", "file.txt", "folder/"}}, // .hidden excluded
+		{"fo", []string{"folder" + sep}},
+		{"", []string{"file.out", "file.txt", "folder" + sep}}, // .hidden excluded
 		{".", []string{".hidden"}},
 		{"nope", nil},
 	}
@@ -209,7 +210,7 @@ func TestCompleteLine(t *testing.T) {
 		wantOK   bool
 	}{
 		{"unique file completes with trailing space", "cat fi", 6, "cat file.txt ", 13, true},
-		{"unique dir completes without trailing space", "cat fo", 6, "cat folder/", 11, true},
+		{"unique dir completes without trailing space", "cat fo", 6, "cat folder" + string(filepath.Separator), 11, true},
 		{"completing inside a dir keeps going", "cat folder/in", 13, "cat folder/inner.txt ", 21, true},
 		{"no matches leaves line untouched", "cat zz", 6, "", 0, false},
 		{"non-tab key is ignored", "cat fi", 6, "", 0, false},
@@ -294,7 +295,7 @@ func TestPrintCandidatesBelow(t *testing.T) {
 		t.Errorf(`completeLine(%q) = (%q, _, true), want ok=false (ambiguous)`, line, gotLine)
 	}
 
-	want := "\r\npfile.txt\r\nproj/\r\n\x1b[3A\x1b[11C"
+	want := "\r\npfile.txt\r\nproj" + string(filepath.Separator) + "\r\n\x1b[3A\x1b[11C"
 	if out.String() != want {
 		t.Errorf("printed = %q, want %q", out.String(), want)
 	}
@@ -437,7 +438,7 @@ func TestCompleteLineDirOnlyCommand(t *testing.T) {
 
 	// cd is dir-only, so the file is filtered out and "proj/" is unique.
 	gotLine, gotPos, ok := completeLine("cd p", 4, '\t')
-	wantLine := "cd proj/"
+	wantLine := "cd proj" + string(filepath.Separator)
 	if !ok || gotLine != wantLine {
 		t.Errorf(`completeLine("cd p") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
 	}

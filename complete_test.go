@@ -201,6 +201,12 @@ func TestShellEscape(t *testing.T) {
 func TestCompleteLine(t *testing.T) {
 	withTempDir(t, "file.txt", "folder/inner.txt")
 
+	// A directory match's trailing separator is spliced back into the
+	// line unquoted, so shellEscape backslash-escapes it just like any
+	// other backslash — doubling it on Windows, where
+	// filepath.Separator is "\".
+	dirSuffix := shellEscape(string(filepath.Separator))
+
 	cases := []struct {
 		name     string
 		line     string
@@ -210,7 +216,7 @@ func TestCompleteLine(t *testing.T) {
 		wantOK   bool
 	}{
 		{"unique file completes with trailing space", "cat fi", 6, "cat file.txt ", 13, true},
-		{"unique dir completes without trailing space", "cat fo", 6, "cat folder" + string(filepath.Separator), 11, true},
+		{"unique dir completes without trailing space", "cat fo", 6, "cat folder" + dirSuffix, 10 + len(dirSuffix), true},
 		{"completing inside a dir keeps going", "cat folder/in", 13, "cat folder/inner.txt ", 21, true},
 		{"no matches leaves line untouched", "cat zz", 6, "", 0, false},
 		{"non-tab key is ignored", "cat fi", 6, "", 0, false},
@@ -437,8 +443,10 @@ func TestCompleteLineDirOnlyCommand(t *testing.T) {
 	}
 
 	// cd is dir-only, so the file is filtered out and "proj/" is unique.
+	// Spliced back unquoted, the separator goes through shellEscape like
+	// any other backslash, doubling it on Windows.
 	gotLine, gotPos, ok := completeLine("cd p", 4, '\t')
-	wantLine := "cd proj" + string(filepath.Separator)
+	wantLine := "cd proj" + shellEscape(string(filepath.Separator))
 	if !ok || gotLine != wantLine {
 		t.Errorf(`completeLine("cd p") = (%q, %d, %v), want (%q, _, true)`, gotLine, gotPos, ok, wantLine)
 	}

@@ -343,3 +343,39 @@ func TestPipelineClosesPipeFds(t *testing.T) {
 		})
 	}
 }
+
+// TestPipelineStagesShareProcessGroup: every external stage joins one
+// process group (so the pipeline can be killed and handed the terminal as a
+// unit), and that group is not gish's own.
+func TestPipelineStagesShareProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process groups are POSIX-only")
+	}
+	requiresSh(t)
+	dir := t.TempDir()
+	pgidOf := func(name string) string {
+		return "ps -o pgid= -p $$ > " + dir + "/" + name
+	}
+	pipeline := &Pipeline{Stages: []*Command{
+		{Tokens: []Token{token("sh"), token("-c"), token(pgidOf("a") + "; ps -o pgid= -p $PPID > " + dir + "/own; echo x")}},
+		{Tokens: []Token{token("sh"), token("-c"), token("cat >/dev/null; " + pgidOf("b"))}},
+	}}
+	if err := pipeline.Exec(pipelineCtx()); err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+
+	read := func(name string) string {
+		b, err := os.ReadFile(dir + "/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	a, b := read("a"), read("b")
+	if a != b {
+		t.Errorf("stages are in different process groups: %s vs %s", a, b)
+	}
+	if own := read("own"); a == own {
+		t.Errorf("stages share gish's own process group %s", own)
+	}
+}

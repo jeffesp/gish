@@ -46,7 +46,16 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 	}
 
 	cmd := exec.Command(c.Name(), tokenValues(c.Args())...)
-	setNewProcessGroup(cmd)
+	leader := ctx.Pgid != nil && *ctx.Pgid == 0
+	if ctx.Pgid != nil {
+		var tty *os.File
+		if leader {
+			tty = ctx.TTY
+		}
+		setProcessGroup(cmd, *ctx.Pgid, tty)
+	} else {
+		setProcessGroup(cmd, 0, nil)
+	}
 	clearCmd := SetCurrentCmd(cmd)
 
 	cmd.Stdin = ctx.In
@@ -55,6 +64,9 @@ func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
 	if err := cmd.Start(); err != nil {
 		clearCmd()
 		return func() error { return err }, func() {}
+	}
+	if leader {
+		*ctx.Pgid = cmd.Process.Pid
 	}
 	return func() error {
 			defer clearCmd()
@@ -128,6 +140,22 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 		sysIn, sysOut, sysErrOut = ctx.SystemIO.In, ctx.SystemIO.Out, ctx.SystemIO.ErrOut
 	}
 
+	// All external stages join one process group, led by the first. When
+	// stdin is a terminal that group is made the foreground group, so
+	// interactive stages (fzf, less, ...) may use the tty without being
+	// stopped by SIGTTIN/SIGTTOU, and Ctrl+C reaches the whole pipeline.
+	// Take the terminal back for gish once every stage has finished.
+	var pgid int
+	var tty *os.File
+	if f, ok := sysIn.(*os.File); ok && isTerminal(f) {
+		tty = f
+	}
+	defer func() {
+		if pgid != 0 && tty != nil {
+			reclaimTerminal(tty)
+		}
+	}()
+
 	stages := make([]pipelineStage, len(p.Stages))
 	var nextIn io.Reader = sysIn
 	var prevPR *os.File // read end of the previous pipe — this stage's stdin
@@ -135,6 +163,8 @@ func (p *Pipeline) Exec(ctx *ExecCtx) error {
 		localCtx := &ExecCtx{
 			In:     nextIn,
 			ErrOut: sysErrOut,
+			Pgid:   &pgid,
+			TTY:    tty,
 		}
 		var pr, pw *os.File
 		if i == len(p.Stages)-1 {

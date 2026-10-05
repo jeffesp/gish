@@ -153,6 +153,24 @@ gish.toJSON(obj); // pretty-print (2-space indent)
 gish.toJSON(obj, false); // compact
 ```
 
+### `console`
+
+A global `console` works like the one in node and browsers:
+
+```javascript
+console.log("a", 1, {k: "v"}); // stdout, space-separated; objects pretty-printed
+console.log("%s is %d", "x", 42); // %s %d %i %f %j %o %O %c, %% for a literal %
+console.info(...); console.debug(...); // same as log
+console.error(...); console.warn(...); // stderr
+console.dir(obj);
+console.assert(cond, "message"); // stderr, only when cond is falsy
+console.count("label"); console.countReset("label");
+console.group("title"); console.groupEnd(); // indents output
+console.time("t"); console.timeLog("t"); console.timeEnd("t");
+```
+
+Not implemented: `console.table` and `console.trace`.
+
 ### Example: Set the Title From the Prompt
 
 The prompt function runs before each prompt, so it can also set the window title:

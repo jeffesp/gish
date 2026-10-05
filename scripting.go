@@ -77,6 +77,8 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	})
 
 	// gish.print / gish.println
+	// todo: support more than one arg to the function
+	// todo: also should probably have a top level 'console' object not off of gish?
 	gishObj.Set("print", func(call goja.FunctionCall) goja.Value {
 		fmt.Fprint(ctx.Out, formatJSValue(vm, call.Argument(0)))
 		return goja.Undefined()

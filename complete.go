@@ -344,14 +344,15 @@ var dirOnlyCommands = map[string]bool{
 // this map to add more.
 var fileOnlyCommands = map[string]bool{}
 
-// commandForWord returns the command name w belongs to: the first word of
-// the current pipeline segment (the tokens since the last unquoted "|" or
-// "|&", or since the start of the line). Returns "" if w is itself in
-// command position, i.e. there is no command yet to look up.
-func commandForWord(line string, w word) string {
+// segmentTokens returns the tokens of the pipeline segment w belongs to,
+// up to (not including) w: everything since the last unquoted "|" or "|&",
+// or since the start of the line. The first token is the segment's command.
+// Returns nil if w is itself in command position, or the text before it
+// doesn't tokenize.
+func segmentTokens(line string, w word) []Token {
 	tokens, err := tokenize(line[:w.Start])
 	if err != nil {
-		return ""
+		return nil
 	}
 
 	segStart := 0
@@ -360,10 +361,43 @@ func commandForWord(line string, w word) string {
 			segStart = i + 1
 		}
 	}
-	if segStart >= len(tokens) {
+	return tokens[segStart:]
+}
+
+// commandForWord returns the command name w belongs to: the first word of
+// the current pipeline segment. Returns "" if w is itself in command
+// position, i.e. there is no command yet to look up.
+func commandForWord(line string, w word) string {
+	seg := segmentTokens(line, w)
+	if len(seg) == 0 {
 		return ""
 	}
-	return tokens[segStart].Value
+	return seg[0].Value
+}
+
+// scriptCandidates asks the completer registered with gish.complete for w's
+// command, if any, and returns its candidates filtered to those starting
+// with w.Text, deduplicated and sorted. ok is false when there is nothing
+// to ask (no command yet, no completer, or the completer declined), meaning
+// the caller should use default completion.
+func scriptCandidates(line string, w word) (matches []string, ok bool) {
+	seg := segmentTokens(line, w)
+	if len(seg) == 0 {
+		return nil, false
+	}
+	got, ok := jsComplete(seg[0].Value, tokenValues(seg[1:]), w.Text, line)
+	if !ok {
+		return nil, false
+	}
+	seen := map[string]bool{}
+	for _, c := range got {
+		if strings.HasPrefix(c, w.Text) && !seen[c] {
+			seen[c] = true
+			matches = append(matches, c)
+		}
+	}
+	sort.Strings(matches)
+	return matches, true
 }
 
 // filterEntries keeps only the fileCandidates results that are
@@ -539,6 +573,10 @@ func spliceCompletion(line string, pos int, w word, text string, trailing string
 // plans/unlikely/possible-readline.md for the hook point and
 // plans/tab-completion.md for the completion design.
 //
+// A word in argument position whose command has a completer registered
+// with gish.complete (scripting.go) completes against that completer's
+// candidates, unless it declines (see jsComplete).
+//
 // A word in command position with no path separator completes against
 // aliases, builtins, and executables on $PATH; every other word (including
 // a command-position word like "./foo" or "/usr/b") completes as a
@@ -552,18 +590,20 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 	}
 
 	w := wordAtCursor(line, pos)
-	var matches []string
-	if w.IsCommand && !strings.ContainsRune(w.Text, filepath.Separator) && !strings.HasPrefix(w.Text, "~") {
-		matches = commandCandidates(w.Text)
-	} else {
-		matches = fileCandidates(w.Text)
-	}
+	matches, scripted := scriptCandidates(line, w)
+	if !scripted {
+		if w.IsCommand && !strings.ContainsRune(w.Text, filepath.Separator) && !strings.HasPrefix(w.Text, "~") {
+			matches = commandCandidates(w.Text)
+		} else {
+			matches = fileCandidates(w.Text)
+		}
 
-	switch cmd := commandForWord(line, w); {
-	case dirOnlyCommands[cmd]:
-		matches = filterEntries(matches, true)
-	case fileOnlyCommands[cmd]:
-		matches = filterEntries(matches, false)
+		switch cmd := commandForWord(line, w); {
+		case dirOnlyCommands[cmd]:
+			matches = filterEntries(matches, true)
+		case fileOnlyCommands[cmd]:
+			matches = filterEntries(matches, false)
+		}
 	}
 
 	if len(matches) == 0 {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/dop251/goja"
 )
+
+//go:embed defaults/init.js
+var defaultInitJS []byte
 
 var jsVM *goja.Runtime
 var jsmu sync.Mutex
@@ -370,6 +374,18 @@ func configDir() string {
 	return filepath.Join(home, ".config", "gish")
 }
 
+// ensureConfigDir creates dir with the default init.js on first run. An
+// existing directory is left untouched so user configs are never overwritten.
+func ensureConfigDir(dir string) error {
+	if _, err := os.Stat(dir); err == nil || !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "init.js"), defaultInitJS, 0o644)
+}
+
 func loadInitScript(vm *goja.Runtime, ctx *ExecCtx) {
 	// save current dir and change to config dir for relative path references to work
 	currentDir, err := os.Getwd()
@@ -383,6 +399,9 @@ func loadInitScript(vm *goja.Runtime, ctx *ExecCtx) {
 	dir := configDir()
 	if dir == "" {
 		return
+	}
+	if err := ensureConfigDir(dir); err != nil {
+		fmt.Fprintf(ctx.ErrOut, "gish: config dir: %v\n", err)
 	}
 	err = os.Chdir(dir)
 	if err != nil {

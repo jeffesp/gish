@@ -108,7 +108,7 @@ gish> js JSON.stringify({a: 1})
 
 ### The `gish` API
 
-Scripts have access to a global `gish` object:
+Scripts have access to a global `gish` object. For editor hover docs and completion (e.g. VS Code), copy [`js/gish.d.ts`](js/gish.d.ts) into your config directory next to `init.js`, along with [`js/jsconfig.json`](js/jsconfig.json).
 
 ```javascript
 // Register a shell command

@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "target": "ES5",
+    "lib": ["ES5"]
+  },
+  "include": ["*.js", "gish.d.ts"]
+}

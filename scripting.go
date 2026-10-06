@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,12 +21,20 @@ var defaultInitJS []byte
 var jsVM *goja.Runtime
 var jsmu sync.Mutex
 var promptFn goja.Callable
+var scriptErrOut io.Writer = os.Stderr
+
+// lastPromptErr dedupes prompt-error traces: a broken prompt function fails on
+// every prompt, and one trace per distinct error is enough.
+var lastPromptErr string
 
 // InitScripting creates the JS runtime, wires the gish API, and loads user scripts.
 // Call after ctx.Out is set to the final writer (terminal or stdout).
 func InitScripting(ctx *ExecCtx) {
 	jsVM = goja.New()
 	jsVM.SetFieldNameMapper(goja.UncapFieldNameMapper())
+	scriptErrOut = ctx.ErrOut
+	lastPromptErr = ""
+	startTraceCleanup()
 
 	setupAPI(jsVM, ctx)
 	RegisterBuiltin("js", builtinJS)
@@ -58,10 +67,11 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 			if err == nil && val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
 				output = val.String()
 			}
+			msg, detail := jsErrorText(err)
 			jsmu.Unlock()
 
 			if err != nil {
-				return err
+				return traceJSError("register:"+name, msg, detail)
 			}
 			if output != "" {
 				fmt.Fprintln(bCtx.Out, output)
@@ -278,16 +288,30 @@ const defaultPrompt = "gish> "
 // Falls back to "gish> " if no prompt function is set or if it errors.
 func JSPrompt() string {
 	jsmu.Lock()
-	defer jsmu.Unlock()
-
 	if promptFn == nil {
+		jsmu.Unlock()
 		return defaultPrompt
 	}
 	val, err := callSafe(promptFn, goja.Undefined())
-	if err != nil || val == nil || goja.IsUndefined(val) {
+	if err != nil {
+		msg, detail := jsErrorText(err)
+		jsmu.Unlock()
+		if msg != lastPromptErr {
+			lastPromptErr = msg
+			if path := writeJSTrace("prompt", detail); path != "" {
+				fmt.Fprintf(scriptErrOut, "gish: prompt error: %s\n", withTracePath(msg, path))
+			}
+		}
 		return defaultPrompt
 	}
-	return val.String()
+	lastPromptErr = ""
+	if val == nil || goja.IsUndefined(val) {
+		jsmu.Unlock()
+		return defaultPrompt
+	}
+	prompt := val.String()
+	jsmu.Unlock()
+	return prompt
 }
 
 func builtinJS(cmd *Command, ctx *ExecCtx) error {
@@ -309,13 +333,11 @@ func builtinJS(cmd *Command, ctx *ExecCtx) error {
 	if err == nil && val != nil && !goja.IsUndefined(val) {
 		output = val.String()
 	}
+	msg, detail := jsErrorText(err)
 	jsmu.Unlock()
 
 	if err != nil {
-		if ex, ok := err.(*goja.Exception); ok {
-			return fmt.Errorf("%s", ex.Value().String())
-		}
-		return err
+		return traceJSError("js", msg, detail)
 	}
 	if output != "" {
 		fmt.Fprintln(ctx.Out, output)
@@ -339,20 +361,18 @@ func builtinSource(cmd *Command, ctx *ExecCtx) error {
 	prg, err := goja.Compile(path, string(src), false)
 	if err != nil {
 		jsmu.Unlock()
-		return fmt.Errorf("%s: %w", path, err)
+		return traceJSError("source "+path, fmt.Sprintf("%s: %v", path, err), err.Error())
 	}
 	val, err := jsVM.RunProgram(prg)
 	var output string
 	if err == nil && val != nil && !goja.IsUndefined(val) {
 		output = val.String()
 	}
+	msg, detail := jsErrorText(err)
 	jsmu.Unlock()
 
 	if err != nil {
-		if ex, ok := err.(*goja.Exception); ok {
-			return fmt.Errorf("%s: %s", path, ex.Value().String())
-		}
-		return fmt.Errorf("%s: %w", path, err)
+		return traceJSError("source "+path, path+": "+msg, detail)
 	}
 	if output != "" {
 		fmt.Fprintln(ctx.Out, output)
@@ -414,11 +434,14 @@ func loadInitScript(vm *goja.Runtime, ctx *ExecCtx) {
 	}
 	prg, err := goja.Compile("init.js", string(src), false)
 	if err != nil {
-		fmt.Fprintf(ctx.ErrOut, "gish: init.js: %v\n", err)
+		msg := withTracePath(err.Error(), writeJSTrace("init.js", err.Error()))
+		fmt.Fprintf(ctx.ErrOut, "gish: init.js: %s\n", msg)
 		return
 	}
 	if _, err := vm.RunProgram(prg); err != nil {
-		fmt.Fprintf(ctx.ErrOut, "gish: init.js: %v\n", err)
+		_, detail := jsErrorText(err)
+		msg := withTracePath(err.Error(), writeJSTrace("init.js", detail))
+		fmt.Fprintf(ctx.ErrOut, "gish: init.js: %s\n", msg)
 	}
 }
 
@@ -434,6 +457,8 @@ func exportStringSlice(vm *goja.Runtime, val goja.Value) []string {
 }
 
 // callSafe invokes a goja callable, recovering from panics thrown by the runtime.
+// JS exceptions are returned as *goja.Exception so callers keep the stack;
+// use jsErrorText to format them.
 func callSafe(fn goja.Callable, this goja.Value, args ...goja.Value) (goja.Value, error) {
 	var val goja.Value
 	var jsErr error
@@ -441,7 +466,7 @@ func callSafe(fn goja.Callable, this goja.Value, args ...goja.Value) (goja.Value
 		defer func() {
 			if r := recover(); r != nil {
 				if ex, ok := r.(*goja.Exception); ok {
-					jsErr = fmt.Errorf("%s", ex.Value().String())
+					jsErr = ex
 				} else if err, ok := r.(error); ok {
 					jsErr = err
 				} else {

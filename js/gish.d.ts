@@ -48,7 +48,9 @@ declare namespace gish {
   /**
    * Register a custom shell command implemented in JS.
    * If the callback returns a non-null value, it is printed (followed by a
-   * newline) to the command's output. Throwing makes the command fail.
+   * newline) to the command's output. Throwing makes the command fail; the
+   * error message names a trace file with the full stack (see the README's
+   * "Error traces" section).
    *
    * @example
    * gish.register("greet", (ctx) => "hello " + ctx.args[0]);
@@ -113,7 +115,8 @@ declare namespace gish {
   /**
    * Load and execute a JS file. Relative paths resolve against the current
    * directory (while init.js runs, that is the config directory).
-   * Returns the file's completion value.
+   * Returns the file's completion value. Errors thrown by the file propagate
+   * to the caller, and the inner stack is kept in the trace file.
    */
   function source(path: string): any;
 
@@ -128,7 +131,9 @@ declare namespace gish {
   /**
    * Set the function used to build the prompt. It is called before each
    * prompt is shown; return the prompt string. If it throws or returns
-   * undefined, the default `"gish> "` is used.
+   * undefined, the default `"gish> "` is used. A thrown error is reported once
+   * on stderr, with the path of a trace file holding the full stack, until the
+   * error changes.
    */
   function setPrompt(fn: () => string | undefined): void;
 }

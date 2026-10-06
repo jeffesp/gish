@@ -677,3 +677,38 @@ func TestConfigDir(t *testing.T) {
 		t.Errorf("got %q, expected suffix .config/gish", dir)
 	}
 }
+
+func TestEnsureConfigDirCreatesDefault(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "gish")
+	if err := ensureConfigDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "init.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "function run(") {
+		t.Errorf("default init.js missing run helper: %q", got)
+	}
+}
+
+func TestEnsureConfigDirKeepsExisting(t *testing.T) {
+	dir := t.TempDir()
+	if err := ensureConfigDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "init.js")); !os.IsNotExist(err) {
+		t.Errorf("existing dir should not get init.js, stat err = %v", err)
+	}
+}
+
+func TestDefaultInitJSLoads(t *testing.T) {
+	initTestVM(t)
+	dir := filepath.Join(t.TempDir(), "gish")
+	t.Setenv("GISH_CONFIG_DIR", dir)
+	var buf bytes.Buffer
+	loadInitScript(jsVM, &ExecCtx{In: strings.NewReader(""), Out: &buf, ErrOut: &buf})
+	if buf.Len() != 0 {
+		t.Errorf("default init.js produced output: %q", buf.String())
+	}
+}

@@ -21,10 +21,15 @@ var jsVM *goja.Runtime
 var jsmu sync.Mutex
 var promptFn goja.Callable
 
+// completers maps a command name to the JS function registered for it with
+// gish.complete. Guarded by jsmu.
+var completers = map[string]goja.Callable{}
+
 // InitScripting creates the JS runtime, wires the gish API, and loads user scripts.
 // Call after ctx.Out is set to the final writer (terminal or stdout).
 func InitScripting(ctx *ExecCtx) {
 	jsVM = goja.New()
+	completers = map[string]goja.Callable{}
 	jsVM.SetFieldNameMapper(goja.UncapFieldNameMapper())
 
 	setupAPI(jsVM, ctx)
@@ -72,6 +77,7 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	})
 
 	// gish.print / gish.println
+	// todo: support more than one arg to the function
 	gishObj.Set("print", func(call goja.FunctionCall) goja.Value {
 		fmt.Fprint(ctx.Out, formatJSValue(vm, call.Argument(0)))
 		return goja.Undefined()
@@ -269,7 +275,50 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return goja.Undefined()
 	})
 
+	// gish.complete(command, fn)
+	gishObj.Set("complete", func(call goja.FunctionCall) goja.Value {
+		name := call.Argument(0).String()
+		fn, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			panic(vm.NewTypeError("second argument must be a function"))
+		}
+		completers[name] = fn
+		return goja.Undefined()
+	})
+
 	vm.Set("gish", gishObj)
+	setupConsole(vm, ctx)
+}
+
+// jsComplete calls the completer registered for command, if any. ok is false
+// when there is no completer, when it threw, or when it returned anything but
+// an array; the caller then falls back to default completion. An empty array
+// with ok=true means "no candidates".
+func jsComplete(command string, args []string, current, line string) (candidates []string, ok bool) {
+	jsmu.Lock()
+	defer jsmu.Unlock()
+
+	fn := completers[command]
+	if fn == nil || jsVM == nil {
+		return nil, false
+	}
+	jsCtx := jsVM.NewObject()
+	jsCtx.Set("command", command)
+	jsCtx.Set("args", args)
+	jsCtx.Set("current", current)
+	jsCtx.Set("line", line)
+
+	val, err := callSafe(fn, goja.Undefined(), jsCtx)
+	if err != nil || val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil, false
+	}
+	if obj := val.ToObject(jsVM); obj.ClassName() != "Array" {
+		return nil, false
+	}
+	if err := jsVM.ExportTo(val, &candidates); err != nil {
+		return nil, false
+	}
+	return candidates, true
 }
 
 const defaultPrompt = "gish> "

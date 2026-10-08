@@ -551,3 +551,60 @@ func TestFileCandidatesTilde(t *testing.T) {
 		t.Errorf("fileCandidates(~) = %v, want [~/]", got)
 	}
 }
+
+func TestCompleteLineScripted(t *testing.T) {
+	withTempDir(t, "gzzfile")
+	initTestVM(t)
+	if _, err := jsVM.RunString(`
+		gish.complete("gzzgit", function (c) {
+			if (c.args.length === 0) return ["checkout", "commit", "status", "status"];
+			if (c.args[0] === "checkout") return ["main", "dev"];
+			if (c.args[0] === "none") return [];
+			// anything else: decline
+		});
+		gish.complete("gzzboom", function () { throw new Error("boom"); });
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		line   string
+		want   string
+		wantOK bool
+	}{
+		{"gzzgit sta", "gzzgit status ", true}, // unique, deduped
+		{"gzzgit co", "gzzgit commit ", true},
+		{"gzzgit c", "gzzgit c", false}, // checkout/commit: common prefix is "c"
+		{"gzzgit checkout m", "gzzgit checkout main ", true},
+		{"gzzgit none g", "", false},                                       // [] means no candidates, no file fallback
+		{"gzzgit other gzzf", "gzzgit other gzzfile ", true},               // declined: file completion
+		{"gzzboom gzzf", "gzzboom gzzfile ", true},                         // throwing: file completion
+		{"gzzgit status | cat gzzf", "gzzgit status | cat gzzfile ", true}, // own segment only
+	}
+	for _, c := range cases {
+		got, _, ok := completeLine(c.line, len(c.line), '\t')
+		if ok != c.wantOK || (ok && got != c.want) {
+			t.Errorf("completeLine(%q) = (%q, %v), want (%q, %v)", c.line, got, ok, c.want, c.wantOK)
+		}
+	}
+}
+
+func TestScriptCandidatesContext(t *testing.T) {
+	initTestVM(t)
+	if _, err := jsVM.RunString(`
+		var seen;
+		gish.complete("gzzctx", function (c) { seen = JSON.stringify(c); return []; });
+	`); err != nil {
+		t.Fatal(err)
+	}
+	line := `echo hi | gzzctx one "two words" th`
+	scriptCandidates(line, wordAtCursor(line, len(line)))
+	v, err := jsVM.RunString("seen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"command":"gzzctx","args":["one","two words"],"current":"th","line":"echo hi | gzzctx one \"two words\" th"}`
+	if v.String() != want {
+		t.Errorf("context = %s, want %s", v.String(), want)
+	}
+}

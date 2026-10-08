@@ -144,10 +144,24 @@ gish.lastExitCode();
 gish.print("no newline");
 gish.println("with newline");
 
+// Set the terminal window title
+gish.title("my title");
+
 // JSON helpers
 gish.parseJSON(str); // parse with shell-friendly error messages
 gish.toJSON(obj); // pretty-print (2-space indent)
 gish.toJSON(obj, false); // compact
+```
+
+### Example: Set the Title From the Prompt
+
+The prompt function runs before each prompt, so it can also set the window title:
+
+```javascript
+gish.setPrompt(function () {
+  gish.title(gish.cwd());
+  return "gish> ";
+});
 ```
 
 ### Example: Git Helpers

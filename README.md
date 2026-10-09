@@ -106,6 +106,20 @@ gish> js JSON.stringify({a: 1})
 {"a":1}
 ```
 
+### Error traces
+
+When JavaScript throws (from `js`, `source`, `init.js`, a registered command, or the prompt function), gish writes the full stack trace to its own file and appends the path to the error message:
+
+```
+gish> js function f() { throw new Error("x") } f()
+Error: x (trace: /home/me/.local/state/gish/traces/20260101-120000.000-1234-1.txt)
+```
+
+- Traces are written to `$GISH_TRACE_DIR`, `$XDG_STATE_HOME/gish/traces`, or `~/.local/state/gish/traces`, in that order. The directory is created if needed.
+- At startup, traces older than `$GISH_KEEP_TRACE_DAYS` (default `7`) are deleted. Set it to `0` to keep them forever.
+- Set `GISH_TRACES=0` to disable trace files entirely.
+- A failing prompt function is traced once per distinct error, not on every prompt.
+
 ### The `gish` API
 
 Scripts have access to a global `gish` object. For editor hover docs and completion (e.g. VS Code), copy [`js/gish.d.ts`](js/gish.d.ts) into your config directory next to `init.js`, along with [`js/jsconfig.json`](js/jsconfig.json).

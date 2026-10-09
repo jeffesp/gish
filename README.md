@@ -65,7 +65,16 @@ All flags are optional and combinable.
 history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
 ```
 
-By default only the current session's entries are shown, as `number  exit-code  command`. The number is the entry's position in the full history file, so it works with `!N`.
+By default only the current session's entries are shown, one per line, as `number  exit-code  command`:
+
+```
+gish> history
+    1    0  ls
+    2    1  false
+    3    0  echo hi
+```
+
+The number is the entry's position in the full history file, so it works with `!N` (for example `!3` reruns `echo hi`). It stays the same when other flags filter the list. `--long` adds the start time, directory and duration to each line. `history --help` (or `-h`) prints a short summary of the flags below.
 
 | Flag           | Meaning                                               |
 | -------------- | ----------------------------------------------------- |
@@ -73,7 +82,7 @@ By default only the current session's entries are shown, as `number  exit-code  
 | `--all`        | Include entries from all sessions, not just this one  |
 | `--long`       | Also show start time, directory and duration          |
 | `--since DATE` | Only entries with StartTime >= DATE                   |
-| `--until DATE` | Only entries with StartTime <= DATE                   |
+| `--until DATE` | Only entries with StartTime <= end of DATE            |
 | `--ok`         | Only entries with ExitCode == 0                       |
 | `--fail`       | Only entries with ExitCode != 0                       |
 | `--dir PATH`   | Only entries where Dir contains PATH as a substring   |

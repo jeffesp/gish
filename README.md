@@ -62,12 +62,16 @@ I think most of these are self-explanatory. Session id is just the PID of the cu
 All flags are optional and combinable.
 
 ```
-history [N] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
+history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
 ```
+
+By default only the current session's entries are shown, as `number  exit-code  command`. The number is the entry's position in the full history file, so it works with `!N`.
 
 | Flag           | Meaning                                               |
 | -------------- | ----------------------------------------------------- |
 | `N`            | Show last N results (after all other filters applied) |
+| `--all`        | Include entries from all sessions, not just this one  |
+| `--long`       | Also show start time, directory and duration          |
 | `--since DATE` | Only entries with StartTime >= DATE                   |
 | `--until DATE` | Only entries with StartTime <= DATE                   |
 | `--ok`         | Only entries with ExitCode == 0                       |

@@ -224,6 +224,8 @@ func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 		dirFilter string
 		hasSince  bool
 		hasUntil  bool
+		all       bool
+		long      bool
 	)
 
 	for i := 0; i < len(args); i++ {
@@ -262,6 +264,10 @@ func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 				return fmt.Errorf("--ok and --fail are mutually exclusive")
 			}
 			onlyFail = true
+		case "--all":
+			all = true
+		case "--long":
+			long = true
 		case "--dir":
 			i++
 			if i >= len(args) {
@@ -270,18 +276,27 @@ func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 			dirFilter = args[i].Value
 		default:
 			if limit != 0 || strings.HasPrefix(v, "-") {
-				return fmt.Errorf("unknown flag: %s\nusage: history [N] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]", v)
+				return fmt.Errorf("unknown flag: %s\nusage: history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]", v)
 			}
 			n, err := strconv.Atoi(v)
 			if err != nil || n <= 0 {
-				return fmt.Errorf("invalid count: %s\nusage: history [N] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]", v)
+				return fmt.Errorf("invalid count: %s\nusage: history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]", v)
 			}
 			limit = n
 		}
 	}
 
-	var filtered []HistoryEntry
-	for _, e := range entries {
+	// numbered keeps each entry's position in the full history so the
+	// number shown matches what !N expands.
+	type numbered struct {
+		n int
+		HistoryEntry
+	}
+	var filtered []numbered
+	for idx, e := range entries {
+		if !all && e.SessionID != sessionID {
+			continue
+		}
 		if hasSince && e.StartTime.Before(since) {
 			continue
 		}
@@ -297,17 +312,21 @@ func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 		if dirFilter != "" && !strings.Contains(e.Dir, dirFilter) {
 			continue
 		}
-		filtered = append(filtered, e)
+		filtered = append(filtered, numbered{idx + 1, e})
 	}
 
 	if limit > 0 && limit < len(filtered) {
 		filtered = filtered[len(filtered)-limit:]
 	}
 
-	for i, e := range filtered {
+	for _, e := range filtered {
+		if !long {
+			fmt.Fprintf(ctx.Out, "%5d  %3d  %s\n", e.n, e.ExitCode, e.Command)
+			continue
+		}
 		dur := e.EndTime.Sub(e.StartTime).Round(time.Millisecond)
 		fmt.Fprintf(ctx.Out, "%5d  %s  [%s] exit=%d dur=%v  %s\n",
-			i+1,
+			e.n,
 			e.StartTime.Format("2006-01-02 15:04:05"),
 			e.Dir,
 			e.ExitCode,

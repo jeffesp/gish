@@ -659,3 +659,21 @@ func TestBuiltinHistoryBadArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinHistoryHelp(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	for _, flag := range []string{"--help", "-h"} {
+		var buf bytes.Buffer
+		args := []Token{{Kind: TokenWord, Value: flag}}
+		if err := builtinHistory(testCmd(args), testCtx(&buf)); err != nil {
+			t.Fatalf("%s: %v", flag, err)
+		}
+		for _, want := range []string{"usage: history", "--all", "--long", "--since", "--until", "--ok", "--fail", "--dir"} {
+			if !strings.Contains(buf.String(), want) {
+				t.Errorf("%s: help missing %q:\n%s", flag, want, buf.String())
+			}
+		}
+	}
+}

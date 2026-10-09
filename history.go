@@ -207,6 +207,21 @@ func exitCode(err error) int {
 	return 1
 }
 
+const historyUsage = `usage: history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]
+
+Show command history for the current session as "number  exit-code  command".
+The number matches !N expansion.
+
+  N              show only the last N entries (after other filters)
+  --all          include entries from all sessions
+  --long         also show start time, directory and duration
+  --since DATE   only entries started on or after DATE (YYYY-MM-DD)
+  --until DATE   only entries started on or before DATE (YYYY-MM-DD, inclusive)
+  --ok           only entries that exited 0
+  --fail         only entries that exited non-zero (exclusive with --ok)
+  --dir PATH     only entries whose directory contains PATH
+  -h, --help     show this help`
+
 func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 	entries, err := loadHistory()
 	if err != nil {
@@ -264,6 +279,9 @@ func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 				return fmt.Errorf("--ok and --fail are mutually exclusive")
 			}
 			onlyFail = true
+		case "-h", "--help":
+			fmt.Fprintln(ctx.Out, historyUsage)
+			return nil
 		case "--all":
 			all = true
 		case "--long":
@@ -276,11 +294,11 @@ func builtinHistory(cmd *Command, ctx *ExecCtx) error {
 			dirFilter = args[i].Value
 		default:
 			if limit != 0 || strings.HasPrefix(v, "-") {
-				return fmt.Errorf("unknown flag: %s\nusage: history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]", v)
+				return fmt.Errorf("unknown flag: %s\n%s", v, historyUsage)
 			}
 			n, err := strconv.Atoi(v)
 			if err != nil || n <= 0 {
-				return fmt.Errorf("invalid count: %s\nusage: history [N] [--all] [--long] [--since DATE] [--until DATE] [--ok | --fail] [--dir PATH]", v)
+				return fmt.Errorf("invalid count: %s\n%s", v, historyUsage)
 			}
 			limit = n
 		}

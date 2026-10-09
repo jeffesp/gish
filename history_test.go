@@ -18,9 +18,12 @@ func withTestHistory(t *testing.T) (string, func()) {
 	tmp := filepath.Join(t.TempDir(), "hist")
 	historyFile = tmp
 	historyMax = 0
+	origSession := sessionID
+	sessionID = "1"
 	return tmp, func() {
 		historyFile = origFile
 		historyMax = origMax
+		sessionID = origSession
 	}
 }
 
@@ -189,11 +192,61 @@ func TestBuiltinHistoryNoArgs(t *testing.T) {
 	if !strings.Contains(out, "echo hello") {
 		t.Errorf("output missing command: %q", out)
 	}
-	if !strings.Contains(out, "/tmp") {
-		t.Errorf("output missing dir: %q", out)
+	if strings.Contains(out, "/tmp") || strings.Contains(out, "2026") {
+		t.Errorf("default output should omit dir and time: %q", out)
 	}
-	if !strings.Contains(out, "exit=0") {
-		t.Errorf("output missing exit code: %q", out)
+	if fields := strings.Fields(out); len(fields) < 4 || fields[0] != "1" || fields[1] != "0" {
+		t.Errorf("want number, exit code, command: %q", out)
+	}
+}
+
+func TestBuiltinHistoryLong(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	now := time.Date(2026, 4, 15, 10, 0, 0, 0, time.Local)
+	appendHistory(HistoryEntry{Command: "echo hello", Dir: "/tmp", ExitCode: 0,
+		StartTime: now, EndTime: now.Add(50 * time.Millisecond), SessionID: "1"})
+
+	var buf bytes.Buffer
+	if err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--long"}}), testCtx(&buf)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"echo hello", "/tmp", "exit=0", "dur=50ms"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--long output missing %q: %q", want, out)
+		}
+	}
+}
+
+func TestBuiltinHistorySessionScope(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	now := time.Now()
+	appendHistory(HistoryEntry{Command: "other session", ExitCode: 0, StartTime: now, EndTime: now, SessionID: "2"})
+	appendHistory(HistoryEntry{Command: "this session", ExitCode: 3, StartTime: now, EndTime: now, SessionID: "1"})
+
+	var buf bytes.Buffer
+	if err := builtinHistory(testCmd(nil), testCtx(&buf)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "other session") || !strings.Contains(out, "this session") {
+		t.Errorf("default should show only current session: %q", out)
+	}
+	// Number must match the position in the full history so !N works.
+	if fields := strings.Fields(out); fields[0] != "2" {
+		t.Errorf("number should be global index 2, got: %q", out)
+	}
+
+	buf.Reset()
+	if err := builtinHistory(testCmd([]Token{{Kind: TokenWord, Value: "--all"}}), testCtx(&buf)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "other session") {
+		t.Errorf("--all should include other sessions: %q", buf.String())
 	}
 }
 
@@ -603,6 +656,24 @@ func TestBuiltinHistoryBadArgs(t *testing.T) {
 		buf.Reset()
 		if err := builtinHistory(testCmd(c.args), testCtx(&buf)); err == nil {
 			t.Errorf("%s: expected error", c.name)
+		}
+	}
+}
+
+func TestBuiltinHistoryHelp(t *testing.T) {
+	_, cleanup := withTestHistory(t)
+	defer cleanup()
+
+	for _, flag := range []string{"--help", "-h"} {
+		var buf bytes.Buffer
+		args := []Token{{Kind: TokenWord, Value: flag}}
+		if err := builtinHistory(testCmd(args), testCtx(&buf)); err != nil {
+			t.Fatalf("%s: %v", flag, err)
+		}
+		for _, want := range []string{"usage: history", "--all", "--long", "--since", "--until", "--ok", "--fail", "--dir"} {
+			if !strings.Contains(buf.String(), want) {
+				t.Errorf("%s: help missing %q:\n%s", flag, want, buf.String())
+			}
 		}
 	}
 }

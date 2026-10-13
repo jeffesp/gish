@@ -39,6 +39,14 @@ func execLine(line string, ctx *ExecCtx) {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
 	}
+	// Aliases expand before the line is split so a body may itself hold
+	// ;, && or || (alias up='git pull && git push'), and so the body's own
+	// $VARs are expanded when its item runs.
+	tokens, err = expandAliases(tokens)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return
+	}
 	items, err := splitList(tokens)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
@@ -155,12 +163,6 @@ func execItem(tokens []Token, line string, ctx *ExecCtx) (code int, ok bool) {
 	tokens = expandTildes(tokens)
 	tokens = expandVars(tokens)
 	tokens = expandGlobs(tokens)
-	tokens, err := expandAliases(tokens)
-	if err != nil {
-		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
-		return 0, false
-	}
-
 	tokens, redirects, err := extractRedirects(tokens)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
@@ -171,9 +173,15 @@ func execItem(tokens []Token, line string, ctx *ExecCtx) (code int, ok bool) {
 		return 0, false
 	}
 
-	exe, _, err := parseTokens(tokens, line)
+	exe, background, err := parseTokens(tokens, line)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return 0, false
+	}
+	if background {
+		// Running it in the foreground would block the prompt, which is
+		// not what a trailing & asks for. Refuse until job control exists.
+		fmt.Fprintln(ctx.ErrOut, "gish: background jobs (&) are not supported yet")
 		return 0, false
 	}
 	attachRedirects(exe, redirects)

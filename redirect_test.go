@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+// q single-quotes a file path for use in a gish command line, so the
+// backslashes in Windows paths are not read as escapes.
+func q(path string) string { return "'" + path + "'" }
+
 func TestTokenizeRedirects(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -87,49 +91,49 @@ func TestExecLineRedirects(t *testing.T) {
 		return string(b)
 	}
 
-	out, errOut := runLine(t, "echo hello > "+f)
+	out, errOut := runLine(t, "echo hello > "+q(f))
 	if out != "" || errOut != "" || read(f) != "hello\n" {
 		t.Fatalf("overwrite: out=%q err=%q file=%q", out, errOut, read(f))
 	}
-	runLine(t, "echo world >> "+f)
+	runLine(t, "echo world >> "+q(f))
 	if read(f) != "hello\nworld\n" {
 		t.Errorf("append: file=%q", read(f))
 	}
-	runLine(t, "echo again > "+f)
+	runLine(t, "echo again > "+q(f))
 	if read(f) != "again\n" {
 		t.Errorf("overwrite truncates: file=%q", read(f))
 	}
 
 	// stdin from file
-	out, _ = runLine(t, "cat < "+f)
+	out, _ = runLine(t, "cat < "+q(f))
 	if out != "again\n" {
 		t.Errorf("cat < file = %q", out)
 	}
 
 	// stderr only
 	ef := filepath.Join(dir, "err.txt")
-	out, errOut = runLine(t, "ls /definitely/not/here 2> "+ef)
+	out, errOut = runLine(t, "ls /definitely/not/here 2> "+q(ef))
 	if out != "" || strings.Contains(errOut, "cannot access") || !strings.Contains(read(ef), "definitely") {
 		t.Errorf("2>: out=%q err=%q file=%q", out, errOut, read(ef))
 	}
 
 	// both streams
 	bf := filepath.Join(dir, "both.txt")
-	runLine(t, "ls /definitely/not/here &> "+bf)
+	runLine(t, "ls /definitely/not/here &> "+q(bf))
 	if !strings.Contains(read(bf), "definitely") {
 		t.Errorf("&>: file=%q", read(bf))
 	}
 
 	// named forms
 	nf := filepath.Join(dir, "named.txt")
-	runLine(t, "echo named out> "+nf)
+	runLine(t, "echo named out> "+q(nf))
 	if read(nf) != "named\n" {
 		t.Errorf("out>: file=%q", read(nf))
 	}
 
 	// last redirect to a stream wins
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
-	runLine(t, "echo x > "+a+" > "+b)
+	runLine(t, "echo x > "+q(a)+" > "+q(b))
 	if read(b) != "x\n" {
 		t.Errorf("last wins: b=%q", read(b))
 	}
@@ -141,26 +145,26 @@ func TestExecLineRedirectsInPipelines(t *testing.T) {
 	f := filepath.Join(dir, "o")
 
 	// Redirected stdout means the next stage sees nothing.
-	out, _ := runLine(t, "echo hi > "+f+" | cat")
+	out, _ := runLine(t, "echo hi > "+q(f)+" | cat")
 	if out != "" || strings.TrimSpace(func() string { b, _ := os.ReadFile(f); return string(b) }()) != "hi" {
 		t.Errorf("redirect then pipe: out=%q", out)
 	}
 
 	// Stderr of one stage is discarded, stdout still flows.
-	out, errOut := runLine(t, "ls /definitely/not/here 2> "+filepath.Join(dir, "e")+" | cat")
+	out, errOut := runLine(t, "ls /definitely/not/here 2> "+q(filepath.Join(dir, "e"))+" | cat")
 	if out != "" || strings.Contains(errOut, "cannot access") {
 		t.Errorf("2> in pipeline: out=%q err=%q", out, errOut)
 	}
 
 	// Last stage redirected.
-	runLine(t, "echo piped | cat > "+f)
+	runLine(t, "echo piped | cat > "+q(f))
 	if b, _ := os.ReadFile(f); string(b) != "piped\n" {
 		t.Errorf("pipeline > file: %q", b)
 	}
 
 	// Input redirect on the first stage.
-	runLine(t, "echo src > "+f)
-	out, _ = runLine(t, "cat < "+f+" | cat")
+	runLine(t, "echo src > "+q(f))
+	out, _ = runLine(t, "cat < "+q(f)+" | cat")
 	if out != "src\n" {
 		t.Errorf("< into pipeline: %q", out)
 	}
@@ -177,7 +181,7 @@ func TestExecLineRedirectErrors(t *testing.T) {
 		t.Errorf("no command: err=%q", errOut)
 	}
 	_, errOut = runLine(t, "cat < /definitely/not/here")
-	if !strings.Contains(errOut, "no such file") {
+	if !strings.Contains(errOut, "/definitely/not/here") {
 		t.Errorf("missing input: err=%q", errOut)
 	}
 	// $? reflects the failed redirect

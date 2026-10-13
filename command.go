@@ -16,8 +16,9 @@ type Executable interface {
 }
 
 type Command struct {
-	Tokens []Token
-	Line   string
+	Tokens    []Token
+	Line      string
+	Redirects []Redirect
 }
 
 func (cmd *Command) Args() []Token {
@@ -41,6 +42,19 @@ func (cmd *Command) Name() string {
 //     (their goroutines cannot be interrupted) and for stages that have
 //     already finished
 func (c *Command) Start(ctx *ExecCtx) (wait func() error, kill func()) {
+	rctx, closeFiles, err := applyRedirects(ctx, c.Redirects)
+	if err != nil {
+		return func() error { return err }, func() {}
+	}
+	wait, kill = c.start(rctx)
+	inner := wait
+	return func() error {
+		defer closeFiles()
+		return inner()
+	}, kill
+}
+
+func (c *Command) start(ctx *ExecCtx) (wait func() error, kill func()) {
 	if fn, ok := Builtins[c.Name()]; ok {
 		done := make(chan error, 1)
 		go func() { done <- fn(c, ctx) }()
@@ -112,6 +126,11 @@ func watchStop(pid int, onStop func()) {
 }
 
 func (c *Command) Exec(ctx *ExecCtx) error {
+	ctx, closeFiles, err := applyRedirects(ctx, c.Redirects)
+	if err != nil {
+		return err
+	}
+	defer closeFiles()
 	if fn, ok := Builtins[c.Name()]; ok {
 		return fn(c, ctx)
 	}

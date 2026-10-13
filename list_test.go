@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -70,9 +71,28 @@ func TestSplitList(t *testing.T) {
 
 func runLine(t *testing.T, line string) (out, errOut string) {
 	t.Helper()
-	var o, e bytes.Buffer
+	var o, e syncBuffer
 	execLine(line, &ExecCtx{In: strings.NewReader(""), Out: &o, ErrOut: &e})
 	return o.String(), e.String()
+}
+
+// syncBuffer is a bytes.Buffer safe for the concurrent writers that exec
+// starts when it copies several stages' output into one non-file writer.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func TestExecLineLists(t *testing.T) {

@@ -1,5 +1,7 @@
 # Plan: Output Redirection
 
+> **Status:** steps 1-6 are implemented (redirect.go). One deviation: operators share a single `TokenRedirect` kind whose `Value` is the canonical POSIX spelling, instead of eight kinds. Step 7 (JS API options on `gish.exec`/`gish.spawn`) is still open.
+
 ## Context
 
 Gish has pipelines (`|`) but no file redirection. Adding `>`, `>>`, `2>`, `<` etc. is a

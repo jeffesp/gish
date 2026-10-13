@@ -19,6 +19,9 @@ const (
 	TokenPipe                          // literal pipe char: |
 	TokenMergePipe                     // literal pipe + amp: |&
 	TokenBackground                    // literal amp - &, only valid at EOL
+	TokenSemi                          // literal semicolon: ;
+	TokenAnd                           // literal double amp: &&
+	TokenOr                            // literal double pipe: ||
 )
 
 // Token is a single lexical unit of a command line.
@@ -311,9 +314,19 @@ func tokenize(line string) ([]Token, error) {
 			inQuote = false
 		case !inQuote && (ch == ' ' || ch == '\t'):
 			emit()
+		case !inQuote && ch == ';':
+			emit()
+			tokens = append(tokens, Token{Kind: TokenSemi, Value: ";"})
+		case !inQuote && ch == '&' && i < len(line)-1 && line[i+1] == '&':
+			emit()
+			i++
+			tokens = append(tokens, Token{Kind: TokenAnd, Value: "&&"})
 		case !inQuote && ch == '|':
 			emit()
-			if i < len(line)-1 && line[i+1] == '&' {
+			if i < len(line)-1 && line[i+1] == '|' {
+				i++
+				tokens = append(tokens, Token{Kind: TokenOr, Value: "||"})
+			} else if i < len(line)-1 && line[i+1] == '&' {
 				i = i + 1
 				tokens = append(tokens, Token{Kind: TokenMergePipe, Value: "|&"})
 			} else {

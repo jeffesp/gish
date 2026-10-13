@@ -105,7 +105,8 @@ gish> cd /tmp; ls
 - They chain left to right, like in bash: `false && echo x || echo y` prints `y`.
 - Each side can be a pipeline: `ls | grep go && echo found`.
 - `$?` is the exit code of the last command that ran. Quote the operator (`';'`, `'&&'`) or escape it (`\;`) to pass it as an argument.
-- Not supported: grouping with `( )` or `{ }`.
+- Aliases may contain these operators: `gish.alias("up", "git pull && git push")`.
+- Not supported: grouping with `( )` or `{ }`, and background jobs. A trailing `&` is rejected with an error rather than silently running in the foreground.
 
 ## Redirection
 

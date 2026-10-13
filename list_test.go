@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -109,9 +110,11 @@ func TestExecLineListSequencesState(t *testing.T) {
 	historyFile = t.TempDir() + "/h"
 	t.Chdir(t.TempDir()) // restores the working directory when the test ends
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
-	out, errOut := runLine(t, "cd "+dir+" && pwd")
-	if strings.TrimSpace(out) != dir {
-		t.Errorf("cd && pwd = %q (stderr %q), want %q", out, errOut, dir)
+	// Single quotes keep Windows backslashes from being read as escapes.
+	_, errOut := runLine(t, "cd '"+dir+"' && echo ok")
+	got, _ := os.Getwd()
+	if got, _ = filepath.EvalSymlinks(got); got != dir {
+		t.Errorf("cwd after cd && ... = %q (stderr %q), want %q", got, errOut, dir)
 	}
 }
 

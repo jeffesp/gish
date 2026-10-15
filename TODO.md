@@ -43,9 +43,9 @@ You don't get any output about what went wrong. There is an error swallowed by t
 
 The REPL has no way to continue a command across multiple lines (e.g., trailing `\` or unclosed quotes prompting for more input). Every `ReadLine`/`Scan` is treated as complete.
 
-### No command separators (`;`, `&&`, `||`)
+### ~~No command separators (`;`, `&&`, `||`)~~ — resolved
 
-The tokenizer and parser only handle pipes. There's no way to run `mkdir foo && cd foo` or `cmd1; cmd2` in a single line.
+`;`, `&&` and `||` split a line into pipelines (list.go). Each pipeline is expanded just before it runs, so `$?`, `cd` and globs see the effect of the items before it. Not supported: grouping with `( )` or `{ }`, and `!` negation.
 
 ### expandHistory re-reads the history file on every invocation
 

@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -180,6 +181,8 @@ const (
 	keyRight
 	keyAltLeft
 	keyAltRight
+	keyWordLeft
+	keyWordRight
 	keyHome
 	keyEnd
 	keyDeleteWord
@@ -260,12 +263,24 @@ func bytesToKey(b []byte, pasteActive bool) (rune, []byte) {
 		return keyDelete, b[4:]
 	}
 
-	if !pasteActive && len(b) >= 6 && b[0] == keyEscape && b[1] == '[' && b[2] == '1' && b[3] == ';' && b[4] == '3' {
+	if !pasteActive && len(b) >= 6 && b[0] == keyEscape && b[1] == '[' && b[2] == '1' && b[3] == ';' && (b[4] == '3' || b[4] == '5') {
+		// Modifier 3 is Alt, 5 is Ctrl; both move by whitespace-delimited word.
 		switch b[5] {
 		case 'C':
 			return keyAltRight, b[6:]
 		case 'D':
 			return keyAltLeft, b[6:]
+		}
+	}
+
+	// Alt-B / Alt-F (also what many terminals send for Option-Left/Right):
+	// move by runs of letters and digits, as in readline.
+	if !pasteActive && len(b) >= 2 && b[0] == keyEscape {
+		switch b[1] {
+		case 'b':
+			return keyWordLeft, b[2:]
+		case 'f':
+			return keyWordRight, b[2:]
 		}
 	}
 
@@ -489,6 +504,37 @@ func (t *Terminal) countToRightWord() int {
 	return pos - t.pos
 }
 
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// countToLeftAlnum returns the number of characters from the cursor to the
+// start of the previous run of letters and digits (readline's
+// backward-word).
+func (t *Terminal) countToLeftAlnum() int {
+	pos := t.pos
+	for pos > 0 && !isWordRune(t.line[pos-1]) {
+		pos--
+	}
+	for pos > 0 && isWordRune(t.line[pos-1]) {
+		pos--
+	}
+	return t.pos - pos
+}
+
+// countToRightAlnum returns the number of characters from the cursor to the
+// end of the next run of letters and digits (readline's forward-word).
+func (t *Terminal) countToRightAlnum() int {
+	pos := t.pos
+	for pos < len(t.line) && !isWordRune(t.line[pos]) {
+		pos++
+	}
+	for pos < len(t.line) && isWordRune(t.line[pos]) {
+		pos++
+	}
+	return pos - t.pos
+}
+
 // visualLength returns the number of visible glyphs in s.
 func visualLength(runes []rune) int {
 	inEscapeSeq := false
@@ -563,6 +609,12 @@ func (t *Terminal) handleKey(key rune) (line string, ok bool) {
 	case keyAltRight:
 		// move right by a word.
 		t.pos += t.countToRightWord()
+		t.moveCursorToPos(t.pos)
+	case keyWordLeft:
+		t.pos -= t.countToLeftAlnum()
+		t.moveCursorToPos(t.pos)
+	case keyWordRight:
+		t.pos += t.countToRightAlnum()
 		t.moveCursorToPos(t.pos)
 	case keyLeft:
 		if t.pos == 0 {

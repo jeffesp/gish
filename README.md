@@ -41,6 +41,11 @@ The following builtins are available:
 - `clear` clears the screen. Ctrl-L will also do that.
 - `js` runs JavaScript inline - see the section on JavaScript below.
 
+## Moving by word
+
+- Alt-B / Alt-F move back / forward over a run of letters and digits, so `a/b` takes two steps (it stops at the slash).
+- Ctrl-Left / Ctrl-Right (and Alt-Left / Alt-Right) move over a whitespace-delimited word, so `a/b` is one step.
+
 ## History
 
 The history file is saved to `~/.gish_history` by default. That can be changed by setting `GISH_HISTORY_FILE` environment variable.

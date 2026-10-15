@@ -195,7 +195,9 @@ func makeRequire(vm *goja.Runtime, dir string) func(goja.FunctionCall) goja.Valu
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(base, path)
 		}
-		path, err := resolveModule(path)
+		// Clean so the same file reached by different spellings shares a
+		// cache entry.
+		path, err := resolveModule(filepath.Clean(path))
 		if err != nil {
 			panic(vm.NewGoError(fmt.Errorf("require %q: %w", spec, err)))
 		}

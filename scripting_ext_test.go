@@ -19,8 +19,11 @@ func evalString(t *testing.T, js string) string {
 func TestExecOptions(t *testing.T) {
 	initTestVM(t)
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("here"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct{ js, want string }{
-		{`gish.exec("pwd", [], {cwd: ` + jsQuote(dir) + `}).stdout.trim()`, dir},
+		{`gish.exec("cat", ["marker.txt"], {cwd: ` + jsQuote(dir) + `}).stdout`, "here"},
 		{`gish.exec("sh", ["-c", "echo $GZZ_X"], {env: {GZZ_X: "hi"}}).stdout.trim()`, "hi"},
 		{`gish.exec("cat", [], {stdin: "piped"}).stdout`, "piped"},
 		{`var r = gish.exec("sleep", ["5"], {timeout: 50}); r.timedOut + "|" + (r.exitCode !== 0)`, "true|true"},
@@ -108,10 +111,11 @@ func TestRequire(t *testing.T) {
 func TestCompleteFiles(t *testing.T) {
 	initTestVM(t)
 	withTempDir(t, "gzzfile", "gzzdir/")
-	if got := evalString(t, `gish.completeFiles("gzz").join(",")`); got != "gzzdir/,gzzfile" {
+	sep := string(filepath.Separator)
+	if got := evalString(t, `gish.completeFiles("gzz").join(",")`); got != "gzzdir"+sep+",gzzfile" {
 		t.Errorf("got %q", got)
 	}
-	if got := evalString(t, `gish.completeFiles("gzz", {dirsOnly: true}).join(",")`); got != "gzzdir/" {
+	if got := evalString(t, `gish.completeFiles("gzz", {dirsOnly: true}).join(",")`); got != "gzzdir"+sep {
 		t.Errorf("dirsOnly got %q", got)
 	}
 }

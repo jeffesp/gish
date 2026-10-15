@@ -22,6 +22,20 @@ interface GishExecResult {
   stderr: string;
   /** Process exit code (0 on success). */
   exitCode: number;
+  /** True if the `timeout` option expired and the process was killed. */
+  timedOut: boolean;
+}
+
+/** Options for `gish.exec`. */
+interface GishExecOptions {
+  /** Working directory for the process. */
+  cwd?: string;
+  /** Extra environment variables, added to gish's own environment. */
+  env?: Record<string, string>;
+  /** Text written to the process's standard input. */
+  stdin?: string;
+  /** Kill the process after this many milliseconds. */
+  timeout?: number;
 }
 
 /** Result of `gish.spawn`. Stdout is delivered line by line to the callback. */
@@ -73,8 +87,13 @@ declare namespace gish {
    *
    * @param cmd Executable name or path.
    * @param args Argument list (no shell interpretation).
+   * @param opts Working directory, extra environment, stdin and timeout.
    */
-  function exec(cmd: string, args?: string[]): GishExecResult;
+  function exec(
+    cmd: string,
+    args?: string[],
+    opts?: GishExecOptions,
+  ): GishExecResult;
 
   /**
    * Run a command, calling `onLine` for each line of stdout as it arrives.
@@ -92,6 +111,42 @@ declare namespace gish {
 
   /** Environment variable helpers. */
   const env: GishEnv;
+
+  /** Read-only filesystem helpers. Relative paths use the current directory. */
+  const fs: {
+    /** Read a file as text. Throws if it cannot be read. */
+    readFile(path: string): string;
+    /** True if the path exists. */
+    exists(path: string): boolean;
+    /** Names of the entries in a directory. Throws if it cannot be read. */
+    readdir(path: string): string[];
+    /** Information about a path, or null if it does not exist. */
+    stat(
+      path: string,
+    ): { isDir: boolean; isFile: boolean; size: number; mtime: number } | null;
+  };
+
+  /**
+   * Register a Tab completer for a command (or for aliases that expand to it).
+   * Return an array of candidates: strings, or `{text, space: false}` for a
+   * candidate that should not get a trailing space (like `--format=`).
+   * Return nothing to fall back to file completion, `[]` for no candidates.
+   */
+  function complete(
+    command: string,
+    callback: (ctx: {
+      command: string;
+      args: string[];
+      current: string;
+      line: string;
+    }) => (string | { text: string; space?: boolean })[] | null | undefined,
+  ): void;
+
+  /** The file and directory candidates Tab would offer for `prefix`. */
+  function completeFiles(
+    prefix: string,
+    opts?: { dirsOnly?: boolean },
+  ): string[];
 
   /** Set the terminal window title. */
   function title(text: string): void;
@@ -137,3 +192,15 @@ declare namespace gish {
    */
   function setPrompt(fn: () => string | undefined): void;
 }
+
+/**
+ * Load a CommonJS module by relative or absolute path. Relative paths resolve
+ * against the requiring file, or the current directory at the prompt. `.js`
+ * and `/index.js` are tried when there is no extension; `.json` is parsed.
+ * Modules are cached. Packages from npm are not supported.
+ */
+declare function require(path: string): any;
+declare const module: { exports: any };
+declare const exports: any;
+declare const __filename: string;
+declare const __dirname: string;

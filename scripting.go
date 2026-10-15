@@ -97,30 +97,9 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return goja.Undefined()
 	})
 
-	// gish.exec(cmd, args)
+	// gish.exec(cmd, args, opts?)
 	gishObj.Set("exec", func(call goja.FunctionCall) goja.Value {
-		cmdName := call.Argument(0).String()
-		cmdArgs := exportStringSlice(vm, call.Argument(1))
-
-		cmd := exec.Command(cmdName, cmdArgs...)
-		var stdout, stderr strings.Builder
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err := cmd.Run()
-
-		result := vm.NewObject()
-		result.Set("stdout", stdout.String())
-		result.Set("stderr", stderr.String())
-		code := 0
-		if err != nil {
-			code = exitCode(err)
-			if code == 0 {
-				// exec/fork failure — throw
-				panic(vm.NewGoError(err))
-			}
-		}
-		result.Set("exitCode", code)
-		return result
+		return runExec(vm, call)
 	})
 
 	// gish.spawn(cmd, args, onLine) — streaming line-by-line output
@@ -296,15 +275,35 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 		return goja.Undefined()
 	})
 
+	setupFS(vm, gishObj)
+	gishObj.Set("completeFiles", jsCompleteFiles(vm))
+
 	vm.Set("gish", gishObj)
+	setupRequire(vm)
 	setupConsole(vm, ctx)
+}
+
+// completion is one candidate returned by a completer. NoSpace suppresses
+// the space normally appended when the candidate is the only match, for
+// candidates that continue (`--format=`, `HEAD:`).
+type completion struct {
+	Text    string
+	NoSpace bool
+}
+
+// hasCompleter reports whether a completer is registered for command.
+func hasCompleter(command string) bool {
+	jsmu.Lock()
+	defer jsmu.Unlock()
+	return completers[command] != nil
 }
 
 // jsComplete calls the completer registered for command, if any. ok is false
 // when there is no completer, when it threw, or when it returned anything but
 // an array; the caller then falls back to default completion. An empty array
-// with ok=true means "no candidates".
-func jsComplete(command string, args []string, current, line string) (candidates []string, ok bool) {
+// with ok=true means "no candidates". Array elements are strings, or objects
+// {text, space} where space:false means no trailing space.
+func jsComplete(command string, args []string, current, line string) (candidates []completion, ok bool) {
 	jsmu.Lock()
 	defer jsmu.Unlock()
 
@@ -325,8 +324,22 @@ func jsComplete(command string, args []string, current, line string) (candidates
 	if obj := val.ToObject(jsVM); obj.ClassName() != "Array" {
 		return nil, false
 	}
-	if err := jsVM.ExportTo(val, &candidates); err != nil {
+	var items []any
+	if err := jsVM.ExportTo(val, &items); err != nil {
 		return nil, false
+	}
+	for _, it := range items {
+		switch v := it.(type) {
+		case string:
+			candidates = append(candidates, completion{Text: v})
+		case map[string]any:
+			text, isStr := v["text"].(string)
+			if !isStr {
+				continue
+			}
+			space, hasSpace := v["space"].(bool)
+			candidates = append(candidates, completion{Text: text, NoSpace: hasSpace && !space})
+		}
 	}
 	return candidates, true
 }

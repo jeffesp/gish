@@ -36,7 +36,12 @@ An object, built from the tokens Go has already parsed, so scripts never re-impl
 
 ## Not in v1
 
-- Alias resolution (`ll <tab>` finding `ls`'s completer). Needs loop protection.
 - Descriptions or per-candidate metadata.
 - Async/slow completers: a slow function blocks the editor, same as other shells.
 - Migrating `dirOnlyCommands` / `fileOnlyCommands` onto this table.
+
+## Later additions
+
+- Aliases are followed (`resolveCompleter` in `complete.go`), at most once per name, plain word lists only.
+- A candidate may be `{text, space: false}` to suppress the trailing space.
+- `gish.completeFiles(prefix, {dirsOnly})` exposes the default file candidates.

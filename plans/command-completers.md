@@ -43,5 +43,5 @@ An object, built from the tokens Go has already parsed, so scripts never re-impl
 ## Later additions
 
 - Aliases are followed (`resolveCompleter` in `complete.go`), at most once per name, plain word lists only.
-- A candidate may be `{text, space: false}` to suppress the trailing space.
+- A sole match ending in `/ = : . -` gets no trailing space (`leavesWordOpen` in `complete.go`), so completers return plain strings only.
 - `gish.completeFiles(prefix, {dirsOnly})` exposes the default file candidates.

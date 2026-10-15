@@ -253,3 +253,58 @@ func TestCursorOnLastRow(t *testing.T) {
 		}
 	}
 }
+
+// wordMoveLine types text, sends keys, inserts "|" at the resulting
+// cursor position, and returns the submitted line.
+func wordMoveLine(t *testing.T, text, keys string) string {
+	t.Helper()
+	tm, in, _ := newTestTerminal("p> ")
+	sendAsync(in, text+keys+"|\r")
+	line, err := tm.ReadLine()
+	if err != nil {
+		t.Fatalf("ReadLine: %v", err)
+	}
+	return line
+}
+
+func TestAlnumWordMovement(t *testing.T) {
+	const altB, altF = "\x1bb", "\x1bf"
+	tests := []struct {
+		name, text, keys, want string
+	}{
+		{"alt-b stops after slash", "cd a/b", altB, "cd a/|b"},
+		{"alt-b twice", "cd a/b", altB + altB, "cd |a/b"},
+		{"alt-b skips punctuation run", "foo --bar", altB, "foo --|bar"},
+		{"alt-b at start is a no-op", "ab", altB + altB, "|ab"},
+		{"alt-f stops at slash", "a/b c", "\x01" + altF, "a|/b c"},
+		{"alt-f twice", "a/b c", "\x01" + altF + altF, "a/b| c"},
+		{"alt-f at end is a no-op", "ab", altF, "ab|"},
+		{"digits count as word chars", "x a1_b2", altB, "x a1_|b2"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := wordMoveLine(t, tc.text, tc.keys); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWhitespaceWordMovement(t *testing.T) {
+	const ctrlLeft, ctrlRight = "\x1b[1;5D", "\x1b[1;5C"
+	tests := []struct {
+		name, text, keys, want string
+	}{
+		{"ctrl-left skips all of a/b", "cd a/b", ctrlLeft, "cd |a/b"},
+		{"ctrl-left twice", "cd a/b", ctrlLeft + ctrlLeft, "|cd a/b"},
+		{"ctrl-right skips all of a/b", "a/b c", "\x01" + ctrlRight, "a/b |c"},
+		{"alt-left still works", "cd a/b", "\x1b[1;3D", "cd |a/b"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := wordMoveLine(t, tc.text, tc.keys); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

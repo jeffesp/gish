@@ -375,17 +375,50 @@ func commandForWord(line string, w word) string {
 	return seg[0].Value
 }
 
+// resolveCompleter maps cmd and its args through aliases until it reaches a
+// command that has a completer, so `alias g git` completes like git. A name
+// is followed at most once, and an alias body that is not a plain word list
+// (pipes, redirects) is not followed.
+func resolveCompleter(cmd string, args []string) (string, []string) {
+	seen := map[string]bool{}
+	for !hasCompleter(cmd) && !seen[cmd] {
+		seen[cmd] = true
+		body, ok := getAlias(cmd)
+		if !ok {
+			break
+		}
+		toks, err := tokenize(body)
+		if err != nil || len(toks) == 0 {
+			break
+		}
+		plain := true
+		for _, t := range toks {
+			if t.Kind != TokenWord {
+				plain = false
+			}
+		}
+		if !plain {
+			break
+		}
+		vals := tokenValues(toks)
+		cmd = vals[0]
+		args = append(append([]string{}, vals[1:]...), args...)
+	}
+	return cmd, args
+}
+
 // scriptCandidates asks the completer registered with gish.complete for w's
-// command, if any, and returns its candidates filtered to those starting
-// with w.Text, deduplicated and sorted. ok is false when there is nothing
-// to ask (no command yet, no completer, or the completer declined), meaning
-// the caller should use default completion.
+// command (following aliases), if any, and returns its candidates filtered to
+// those starting with w.Text, deduplicated and sorted. ok is false when there
+// is nothing to ask (no command yet, no completer, or the completer
+// declined), meaning the caller should use default completion.
 func scriptCandidates(line string, w word) (matches []string, ok bool) {
 	seg := segmentTokens(line, w)
 	if len(seg) == 0 {
 		return nil, false
 	}
-	got, ok := jsComplete(seg[0].Value, tokenValues(seg[1:]), w.Text, line)
+	cmd, args := resolveCompleter(seg[0].Value, tokenValues(seg[1:]))
+	got, ok := jsComplete(cmd, args, w.Text, line)
 	if !ok {
 		return nil, false
 	}
@@ -398,6 +431,13 @@ func scriptCandidates(line string, w word) (matches []string, ok bool) {
 	}
 	sort.Strings(matches)
 	return matches, true
+}
+
+// leavesWordOpen reports whether a scripted candidate ends in a character
+// that means the word continues (`--format=`, `HEAD:`, `core.`, `dir/`,
+// `--no-`), so no space is added when it is the only match.
+func leavesWordOpen(candidate string) bool {
+	return candidate != "" && strings.ContainsAny(candidate[len(candidate)-1:], "/=:.-"+string(filepath.Separator))
 }
 
 // filterEntries keeps only the fileCandidates results that are
@@ -612,7 +652,7 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 
 	if len(matches) == 1 {
 		trailing := " "
-		if strings.HasSuffix(matches[0], string(filepath.Separator)) {
+		if strings.HasSuffix(matches[0], string(filepath.Separator)) || (scripted && leavesWordOpen(matches[0])) {
 			trailing = ""
 		}
 		return spliceCompletion(line, pos, w, matches[0], trailing)

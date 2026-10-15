@@ -155,6 +155,20 @@ var r = gish.spawn("ls", ["-al"], function (line) {
 });
 // r.stderr, r.exitCode (stdout is consumed by the callback and given to the callback line-by-line)
 
+// Options: working directory, extra environment, stdin, timeout (ms)
+var r = gish.exec("git", ["ls-remote", "origin"], {
+  cwd: "/path/to/repo",
+  env: { GIT_TERMINAL_PROMPT: "0" },
+  stdin: "text for the process",
+  timeout: 2000,
+}); // r.timedOut is true if the timeout killed it
+
+// Read-only filesystem helpers
+gish.fs.readFile("notes.txt"); // text; throws if unreadable
+gish.fs.exists("notes.txt"); // boolean
+gish.fs.readdir("."); // ["a", "b"]
+gish.fs.stat("notes.txt"); // {isDir, isFile, size, mtime} or null
+
 // Environment variables
 gish.env.get("HOME");
 gish.env.set("KEY", "val");
@@ -179,6 +193,21 @@ gish.parseJSON(str); // parse with shell-friendly error messages
 gish.toJSON(obj); // pretty-print (2-space indent)
 gish.toJSON(obj, false); // compact
 ```
+
+### Modules - `require`
+
+`require("./path")` loads a CommonJS module (`module.exports`, `exports`, `__dirname`, `__filename`). Relative paths resolve against the requiring file, or the current directory at the prompt; `.js`, `/index.js` and `.json` are found without an extension. Each module runs in its own scope and is cached. Only file paths work, not npm packages (which mostly rely on Node's APIs that gish does not have).
+
+### Tab completion - `gish.complete`
+
+```javascript
+gish.complete("git", ({ command, args, current, line }) => {
+  if (args.length === 0) return ["status", "--format="];
+  return null; // fall back to file completion
+});
+```
+
+Return an array of strings. When the only match ends in `/`, `=`, `:`, `.` or `-` (for example `--format=` or `HEAD:`), no space is added so you can keep typing. Return `[]` for no candidates, or nothing to fall back to file completion. `gish.completeFiles(prefix, {dirsOnly})` returns the file candidates so a completer can mix them with its own. A completer also applies to aliases that expand to the command (`alias g git`).
 
 ### `console`
 

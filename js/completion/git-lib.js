@@ -16,7 +16,9 @@
 //   - bash falls back to filename completion when COMPREPLY is empty
 //     (-o default); handlers return [] for that and the entry point turns it
 //     into null, which gish treats the same way.
-//   - Candidates are strings (trailing space added) or {text, space: false}.
+//   - Candidates are plain strings. gish adds a trailing space after a sole
+//     match unless it ends in one of `/ = : . -`, so a candidate keeps the
+//     word open by ending that way (`--format=`, `HEAD:`, `core.`, `dir/`).
 
 "use strict";
 
@@ -36,15 +38,9 @@ function env(name) {
   return gish.env.get(name);
 }
 
-// A candidate with sfx appended. A space or no suffix means the usual
-// trailing space; anything else (including "") means the word continues.
+// A candidate with sfx appended; no suffix or a space means none.
 function sfxCand(text, sfx) {
-  if (sfx === undefined || sfx === " ") return text;
-  return { text: text + sfx, space: false };
-}
-
-function candText(c) {
-  return typeof c === "string" ? c : c.text;
+  return sfx === undefined || sfx === " " ? text : text + sfx;
 }
 
 // Runs git with args and returns stdout, or "" if git failed, timed out or is
@@ -133,13 +129,13 @@ function gitcomp(ctx, list, pfx = "", cur = ctx.cur, sfx = "") {
       if (negated) continue;
       // bash lists a literal "--no-..."; "--no-" is more useful to insert.
       if ("--no-".startsWith(cur) && cur.startsWith("--")) {
-        out.push({ text: pfx + "--no-", space: false });
+        out.push(pfx + "--no-");
       }
       break;
     }
     const c = w + sfx;
     if (!c.startsWith(cur)) continue;
-    out.push(c.endsWith("=") || c.endsWith(".") ? { text: pfx + c, space: false } : pfx + c);
+    out.push(pfx + c);
   }
   return out;
 }
@@ -161,8 +157,7 @@ function valueOpts(ctx, table) {
 }
 
 // __gitcomp_nl: complete from a list of names (array or newline-separated
-// string). sfx defaults to a trailing space; "" and other suffixes do not get
-// one.
+// string). sfx is appended to each candidate.
 function gitcompNl(ctx, list, pfx = "", cur = ctx.cur, sfx = undefined) {
   const items = typeof list === "string" ? lines(list) : list;
   return items.filter((n) => n.startsWith(cur)).map((n) => sfxCand(pfx + n, sfx));
@@ -379,7 +374,7 @@ function escapeGlob(s) {
 // __git_index_files: first path components under root (a directory prefix
 // with a trailing slash, or "") that start with match, as given by
 // `git ls-files <opts>` (or the committable files for "--committable").
-// Directories get a trailing slash and no space after them.
+// Directories get a trailing slash.
 function indexFiles(ctx, opts, root, match) {
   const pattern = (match ? escapeGlob(match) : "?") + "*";
   const pre = root ? ["-C", root] : [];
@@ -394,7 +389,7 @@ function indexFiles(ctx, opts, root, match) {
     const name = slash < 0 ? p : p.slice(0, slash);
     seen.set(name, seen.get(name) || slash >= 0);
   }
-  return [...seen].map(([name, isDir]) => (isDir ? { text: root + name + "/", space: false } : root + name));
+  return [...seen].map(([name, isDir]) => (isDir ? root + name + "/" : root + name));
 }
 
 // __git_complete_index_file
@@ -430,7 +425,7 @@ function completeRevlistFile(ctx) {
     for (const e of git(ctx, ["ls-tree", "-z", ls]).split("\0")) {
       const m = /^\d+ (\w+) \w+\t(.*)$/s.exec(e);
       if (!m || !m[2].startsWith(rest)) continue;
-      out.push(m[1] === "tree" ? { text: pfx + m[2] + "/", space: false } : pfx + m[2]);
+      out.push(m[1] === "tree" ? pfx + m[2] + "/" : pfx + m[2]);
     }
     return out;
   }
@@ -573,7 +568,7 @@ function completeConfigValue(ctx, varname, cur, pfx = "") {
   if (/^branch\..*\.merge$/.test(v)) return completeRefs(ctx, { pfx, cur });
   if (/^branch\..*\.rebase$/.test(v)) return gitcomp(ctx, "false true merges interactive", pfx, cur);
   if ((m = /^remote\.(.*)\.fetch$/.exec(v))) {
-    if (!cur) return [{ text: pfx + "refs/heads/", space: false }];
+    if (!cur) return [pfx + "refs/heads/"];
     const r = lines(git(ctx, ["ls-remote", m[1], "refs/heads/*"], { timeout: 3000 })).map((l) => {
       const ref = l.split(/\s+/)[1];
       return ref + ":refs/remotes/" + m[1] + "/" + ref.replace(/^refs\/heads\//, "");
@@ -612,7 +607,7 @@ function completeConfigName(ctx, cur = ctx.cur, sfx = undefined, outer = "") {
     const base = "branch.";
     const c = cur.slice(base.length);
     return heads(ctx, "", c)
-      .map((h) => ({ text: outer + base + h + ".", space: false }))
+      .map((h) => outer + base + h + ".")
       .concat(gitcompNl(ctx, ["autoSetupMerge", "autoSetupRebase"], outer + base, c, sfx));
   }
   if (/^guitool\..*\..*/.test(cur)) return sub("argPrompt cmd confirm needsFile noConsole noRescan prompt revPrompt revUnmerged title");
@@ -687,14 +682,14 @@ function completeDirectories(ctx) {
   const dir = cur.slice(0, cur.lastIndexOf("/") + 1);
   const out = [];
   for (const d of git(ctx, ["ls-tree", "-z", "-d", "--name-only", "HEAD", dir]).split("\0")) {
-    if (d && d.startsWith(cur)) out.push({ text: d + "/", space: false });
+    if (d && d.startsWith(cur)) out.push(d + "/");
   }
   if (!out.length && cur.endsWith("/")) out.push(cur);
   return out;
 }
 
 module.exports = {
-  cache, words, lines, env, sfxCand, candText, git, gitRaw, createContext, findRepoPath,
+  cache, words, lines, env, sfxCand, git, gitRaw, createContext, findRepoPath,
   gitcomp, valueOpt, valueOpts, gitcompNl, gitcompBuiltin,
   findOnCmdline, findLastOnCmdline, getOptionValue, hasDoubleDash, countArguments,
   forEachRef, heads, remoteHeads, tags, dwimRemoteHeads, remotes, refs, completeRefs,

@@ -72,13 +72,13 @@ func gitRepoFixture(t *testing.T) func(line string) []string {
 	}
 	return func(line string) []string {
 		t.Helper()
-		matches, noSpace, ok := scriptCandidates(line, wordAtCursor(line, len(line)))
+		matches, ok := scriptCandidates(line, wordAtCursor(line, len(line)))
 		if !ok {
 			return nil
 		}
 		var out []string
 		for _, m := range matches {
-			if noSpace[m] {
+			if leavesWordOpen(m) {
 				m += "·"
 			}
 			out = append(out, m)

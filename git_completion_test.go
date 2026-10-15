@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -14,6 +15,9 @@ import (
 // trailing space).
 func gitRepoFixture(t *testing.T) func(line string) []string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture relies on POSIX paths (GIT_CONFIG_GLOBAL=/dev/null)")
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}

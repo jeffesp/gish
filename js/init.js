@@ -14,3 +14,6 @@ gish.alias("hg", "history | grep");
 // order matters here because the prompt uses functions from git
 gish.source("./git.js");
 gish.source("./prompt.js");
+
+// Tab completion for git (see completion/git.js).
+require("./completion/git.js");

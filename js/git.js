@@ -47,34 +47,3 @@ function runGitStatus() {
 
   return { branch, ahead, behind, items };
 }
-
-// Flatten a {symbol: [files]} group into a unique list of files.
-function getAnyStatusFiles(statusItem) {
-  var seen = {};
-  Object.keys(statusItem).forEach(function (k) {
-    statusItem[k].forEach(function (f) {
-      seen[f] = true;
-    });
-  });
-  return Object.keys(seen);
-}
-
-gish.complete("git", ({ args }) => {
-  if (args.length === 0) {
-    return ["add", "branch", "commit", "checkout", "status"];
-  }
-  if (args[0] === "checkout") {
-    return run("git", ["branch", "--format=%(refname:short)"]).split("\n");
-  }
-  if (args[0] === "add") {
-    // get files that are possible to add
-    const status = runGitStatus();
-    if (!status) return;
-
-    // Only files that `git add` can still act on: modified and untracked.
-    return getAnyStatusFiles({
-      ...status.items.unstaged,
-      ...status.items.untracked,
-    });
-  }
-});

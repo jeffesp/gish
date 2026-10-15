@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -281,6 +284,98 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 	vm.Set("gish", gishObj)
 	setupRequire(vm)
 	setupConsole(vm, ctx)
+}
+
+// execOpts are the optional third argument of gish.exec.
+type execOpts struct {
+	Dir     string
+	Env     map[string]string
+	Stdin   *string
+	Timeout time.Duration
+}
+
+func parseExecOpts(vm *goja.Runtime, v goja.Value) execOpts {
+	var o execOpts
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return o
+	}
+	m, ok := v.Export().(map[string]any)
+	if !ok {
+		panic(vm.NewTypeError("exec options must be an object"))
+	}
+	if d, ok := m["cwd"].(string); ok {
+		o.Dir = d
+	}
+	if e, ok := m["env"].(map[string]any); ok {
+		o.Env = map[string]string{}
+		for k, val := range e {
+			o.Env[k] = fmt.Sprint(val)
+		}
+	}
+	if s, ok := m["stdin"].(string); ok {
+		o.Stdin = &s
+	}
+	switch t := m["timeout"].(type) {
+	case int64:
+		o.Timeout = time.Duration(t) * time.Millisecond
+	case float64:
+		o.Timeout = time.Duration(t * float64(time.Millisecond))
+	}
+	return o
+}
+
+// runExec implements gish.exec(cmd, args, opts?).
+func runExec(vm *goja.Runtime, call goja.FunctionCall) goja.Value {
+	cmdName := call.Argument(0).String()
+	cmdArgs := exportStringSlice(vm, call.Argument(1))
+	opts := parseExecOpts(vm, call.Argument(2))
+
+	ctx := context.Background()
+	if opts.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
+	cmd.WaitDelay = 500 * time.Millisecond
+	cmd.Dir = opts.Dir
+	if opts.Env != nil {
+		cmd.Env = os.Environ()
+		for k, v := range opts.Env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
+	if opts.Stdin != nil {
+		cmd.Stdin = strings.NewReader(*opts.Stdin)
+	}
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+	result := vm.NewObject()
+	result.Set("stdout", stdout.String())
+	result.Set("stderr", stderr.String())
+	result.Set("timedOut", timedOut)
+	code := 0
+	if err != nil {
+		var exitErr *exec.ExitError
+		switch {
+		case timedOut:
+			code = 1
+			if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+				code = exitErr.ExitCode()
+			}
+		case errors.As(err, &exitErr):
+			code = exitErr.ExitCode()
+		default:
+			// could not start the process
+			panic(vm.NewGoError(err))
+		}
+	}
+	result.Set("exitCode", code)
+	return result
 }
 
 // completion is one candidate returned by a completer. NoSpace suppresses

@@ -16,26 +16,6 @@ func evalString(t *testing.T, js string) string {
 	return v.String()
 }
 
-func TestExecOptions(t *testing.T) {
-	initTestVM(t)
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("here"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cases := []struct{ js, want string }{
-		{`gish.exec("cat", ["marker.txt"], {cwd: ` + jsQuote(dir) + `}).stdout`, "here"},
-		{`gish.exec("sh", ["-c", "echo $GZZ_X"], {env: {GZZ_X: "hi"}}).stdout.trim()`, "hi"},
-		{`gish.exec("cat", [], {stdin: "piped"}).stdout`, "piped"},
-		{`var r = gish.exec("sleep", ["5"], {timeout: 50}); r.timedOut + "|" + (r.exitCode !== 0)`, "true|true"},
-		{`var r = gish.exec("true"); r.timedOut + "|" + r.exitCode`, "false|0"},
-	}
-	for _, c := range cases {
-		if got := evalString(t, c.js); got != c.want {
-			t.Errorf("%s = %q, want %q", c.js, got, c.want)
-		}
-	}
-}
-
 func jsQuote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)

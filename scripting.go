@@ -378,14 +378,6 @@ func runExec(vm *goja.Runtime, call goja.FunctionCall) goja.Value {
 	return result
 }
 
-// completion is one candidate returned by a completer. NoSpace suppresses
-// the space normally appended when the candidate is the only match, for
-// candidates that continue (`--format=`, `HEAD:`).
-type completion struct {
-	Text    string
-	NoSpace bool
-}
-
 // hasCompleter reports whether a completer is registered for command.
 func hasCompleter(command string) bool {
 	jsmu.Lock()
@@ -396,9 +388,8 @@ func hasCompleter(command string) bool {
 // jsComplete calls the completer registered for command, if any. ok is false
 // when there is no completer, when it threw, or when it returned anything but
 // an array; the caller then falls back to default completion. An empty array
-// with ok=true means "no candidates". Array elements are strings, or objects
-// {text, space} where space:false means no trailing space.
-func jsComplete(command string, args []string, current, line string) (candidates []completion, ok bool) {
+// with ok=true means "no candidates".
+func jsComplete(command string, args []string, current, line string) (candidates []string, ok bool) {
 	jsmu.Lock()
 	defer jsmu.Unlock()
 
@@ -419,22 +410,8 @@ func jsComplete(command string, args []string, current, line string) (candidates
 	if obj := val.ToObject(jsVM); obj.ClassName() != "Array" {
 		return nil, false
 	}
-	var items []any
-	if err := jsVM.ExportTo(val, &items); err != nil {
+	if err := jsVM.ExportTo(val, &candidates); err != nil {
 		return nil, false
-	}
-	for _, it := range items {
-		switch v := it.(type) {
-		case string:
-			candidates = append(candidates, completion{Text: v})
-		case map[string]any:
-			text, isStr := v["text"].(string)
-			if !isStr {
-				continue
-			}
-			space, hasSpace := v["space"].(bool)
-			candidates = append(candidates, completion{Text: text, NoSpace: hasSpace && !space})
-		}
 	}
 	return candidates, true
 }

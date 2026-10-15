@@ -128,8 +128,8 @@ declare namespace gish {
 
   /**
    * Register a Tab completer for a command (or for aliases that expand to it).
-   * Return an array of candidates: strings, or `{text, space: false}` for a
-   * candidate that should not get a trailing space (like `--format=`).
+   * Return an array of candidate strings. A sole match ending in one of
+   * `/ = : . -` (like `--format=`) gets no trailing space.
    * Return nothing to fall back to file completion, `[]` for no candidates.
    */
   function complete(
@@ -139,7 +139,7 @@ declare namespace gish {
       args: string[];
       current: string;
       line: string;
-    }) => (string | { text: string; space?: boolean })[] | null | undefined,
+    }) => string[] | null | undefined,
   ): void;
 
   /** The file and directory candidates Tab would offer for `prefix`. */

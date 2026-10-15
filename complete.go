@@ -409,33 +409,35 @@ func resolveCompleter(cmd string, args []string) (string, []string) {
 
 // scriptCandidates asks the completer registered with gish.complete for w's
 // command (following aliases), if any, and returns its candidates filtered to
-// those starting with w.Text, deduplicated and sorted. noSpace holds the
-// matches that must not get a trailing space. ok is false when there is
-// nothing to ask (no command yet, no completer, or the completer declined),
-// meaning the caller should use default completion.
-func scriptCandidates(line string, w word) (matches []string, noSpace map[string]bool, ok bool) {
+// those starting with w.Text, deduplicated and sorted. ok is false when there
+// is nothing to ask (no command yet, no completer, or the completer
+// declined), meaning the caller should use default completion.
+func scriptCandidates(line string, w word) (matches []string, ok bool) {
 	seg := segmentTokens(line, w)
 	if len(seg) == 0 {
-		return nil, nil, false
+		return nil, false
 	}
 	cmd, args := resolveCompleter(seg[0].Value, tokenValues(seg[1:]))
 	got, ok := jsComplete(cmd, args, w.Text, line)
 	if !ok {
-		return nil, nil, false
+		return nil, false
 	}
 	seen := map[string]bool{}
-	noSpace = map[string]bool{}
 	for _, c := range got {
-		if strings.HasPrefix(c.Text, w.Text) && !seen[c.Text] {
-			seen[c.Text] = true
-			matches = append(matches, c.Text)
-			if c.NoSpace {
-				noSpace[c.Text] = true
-			}
+		if strings.HasPrefix(c, w.Text) && !seen[c] {
+			seen[c] = true
+			matches = append(matches, c)
 		}
 	}
 	sort.Strings(matches)
-	return matches, noSpace, true
+	return matches, true
+}
+
+// leavesWordOpen reports whether a scripted candidate ends in a character
+// that means the word continues (`--format=`, `HEAD:`, `core.`, `dir/`,
+// `--no-`), so no space is added when it is the only match.
+func leavesWordOpen(candidate string) bool {
+	return candidate != "" && strings.ContainsAny(candidate[len(candidate)-1:], "/=:.-"+string(filepath.Separator))
 }
 
 // filterEntries keeps only the fileCandidates results that are
@@ -628,7 +630,7 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 	}
 
 	w := wordAtCursor(line, pos)
-	matches, noSpace, scripted := scriptCandidates(line, w)
+	matches, scripted := scriptCandidates(line, w)
 	if !scripted {
 		if w.IsCommand && !strings.ContainsRune(w.Text, filepath.Separator) && !strings.HasPrefix(w.Text, "~") {
 			matches = commandCandidates(w.Text)
@@ -650,7 +652,7 @@ func completeLine(line string, pos int, key rune) (string, int, bool) {
 
 	if len(matches) == 1 {
 		trailing := " "
-		if noSpace[matches[0]] || strings.HasSuffix(matches[0], string(filepath.Separator)) {
+		if strings.HasSuffix(matches[0], string(filepath.Separator)) || (scripted && leavesWordOpen(matches[0])) {
 			trailing = ""
 		}
 		return spliceCompletion(line, pos, w, matches[0], trailing)

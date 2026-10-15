@@ -609,12 +609,12 @@ func TestScriptCandidatesContext(t *testing.T) {
 	}
 }
 
-func TestScriptedCompletionNoSpace(t *testing.T) {
+func TestScriptedCompletionLeavesWordOpen(t *testing.T) {
 	withTempDir(t)
 	initTestVM(t)
 	if _, err := jsVM.RunString(`
 		gish.complete("gzzns", function (c) {
-			return [{text: "--format=", space: false}, {text: "--force", space: true}, "--fast"];
+			return ["--format=", "--force", "--fast", "HEAD:", "core.", "dir/", "--no-"];
 		});
 	`); err != nil {
 		t.Fatal(err)
@@ -623,6 +623,10 @@ func TestScriptedCompletionNoSpace(t *testing.T) {
 		{"gzzns --form", "gzzns --format="},
 		{"gzzns --forc", "gzzns --force "},
 		{"gzzns --fa", "gzzns --fast "},
+		{"gzzns HE", "gzzns HEAD:"},
+		{"gzzns co", "gzzns core."},
+		{"gzzns di", "gzzns dir/"},
+		{"gzzns --n", "gzzns --no-"},
 	}
 	for _, c := range cases {
 		got, _, ok := completeLine(c.line, len(c.line), '\t')

@@ -202,12 +202,12 @@ gish.toJSON(obj, false); // compact
 
 ```javascript
 gish.complete("git", ({ command, args, current, line }) => {
-  if (args.length === 0) return ["status", { text: "--format=", space: false }];
+  if (args.length === 0) return ["status", "--format="];
   return null; // fall back to file completion
 });
 ```
 
-Return an array of strings, or `{text, space: false}` for a candidate that should not get a trailing space. Return `[]` for no candidates, or nothing to fall back to file completion. `gish.completeFiles(prefix, {dirsOnly})` returns the file candidates so a completer can mix them with its own. A completer also applies to aliases that expand to the command (`alias g git`).
+Return an array of strings. When the only match ends in `/`, `=`, `:`, `.` or `-` (for example `--format=` or `HEAD:`), no space is added so you can keep typing. Return `[]` for no candidates, or nothing to fall back to file completion. `gish.completeFiles(prefix, {dirsOnly})` returns the file candidates so a completer can mix them with its own. A completer also applies to aliases that expand to the command (`alias g git`).
 
 ### `console`
 

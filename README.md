@@ -141,6 +141,34 @@ gish> sort < names.txt
 - Quote or escape an operator to pass it as an argument: `echo '>'`.
 - Not supported yet: `2>&1` style descriptor duplication (use `&>` or `|&`), here-documents, and redirect options on `gish.exec`/`gish.spawn`.
 
+## Redirection
+
+Send a command's streams to files, or read its input from one:
+
+```
+gish> echo hello > out.txt
+gish> echo more >> out.txt
+gish> make 2> errors.txt
+gish> make &> build.log
+gish> sort < names.txt
+```
+
+| Operator       | Named form    | Meaning                          |
+| -------------- | ------------- | -------------------------------- |
+| `>`            | `out>`        | stdout to file (overwrite)       |
+| `>>`           | `out>>`       | stdout to file (append)          |
+| `2>`           | `err>`        | stderr to file (overwrite)       |
+| `2>>`          | `err>>`       | stderr to file (append)          |
+| `&>`           | `out+err>`    | stdout and stderr to one file    |
+| `&>>`          | `out+err>>`   | both, appended                   |
+| `<`            | `in<`         | stdin from file                  |
+
+- Operators must start a word: `echo > f` redirects but `echo>f` is one word. The file name may follow immediately (`2>/dev/null`).
+- Each command in a pipeline has its own redirects. `cmd 2> /dev/null | next` discards `cmd`'s errors and pipes its output. `cmd > f | next` writes to `f` and `next` gets nothing.
+- If a stream is redirected more than once, the last one wins.
+- Quote or escape an operator to pass it as an argument: `echo '>'`.
+- Not supported yet: `2>&1` style descriptor duplication (use `&>` or `|&`), here-documents, and redirect options on `gish.exec`/`gish.spawn`.
+
 ## Last Exit Code
 
 After each command runs, its exit code is available in three places:

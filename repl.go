@@ -39,16 +39,7 @@ func execLine(line string, ctx *ExecCtx) {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
 	}
-	tokens = expandTildes(tokens)
-	tokens = expandVars(tokens)
-	tokens = expandGlobs(tokens)
-	tokens, err = expandAliases(tokens)
-	if err != nil {
-		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
-		return
-	}
-
-	exe, _, err := parseTokens(tokens, line)
+	items, err := splitList(tokens)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return
@@ -58,11 +49,19 @@ func execLine(line string, ctx *ExecCtx) {
 	start := time.Now()
 	code := 0
 
-	if err := exe.Exec(ctx); err != nil {
-		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
-		code = exitCode(err)
+	// Each item is expanded just before it runs, so $? and the working
+	// directory reflect the items before it. An item skipped by && or ||
+	// leaves the status of the last item that did run.
+	for _, item := range items {
+		if item.Op == TokenAnd && code != 0 || item.Op == TokenOr && code == 0 {
+			continue
+		}
+		c, ok := execItem(item.Tokens, line, ctx)
+		if !ok {
+			return
+		}
+		code = c
 	}
-	recordExitCode(code)
 
 	if !skipHistory {
 		appendHistory(HistoryEntry{
@@ -147,4 +146,31 @@ func runScannerREPL(ctx *ExecCtx) {
 		}
 
 	}
+}
+
+// execItem expands, parses and runs one command or pipeline of a command
+// list and returns its exit code. ok is false if the item could not be
+// built (a syntax error was reported), which abandons the rest of the line.
+func execItem(tokens []Token, line string, ctx *ExecCtx) (code int, ok bool) {
+	tokens = expandTildes(tokens)
+	tokens = expandVars(tokens)
+	tokens = expandGlobs(tokens)
+	tokens, err := expandAliases(tokens)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return 0, false
+	}
+
+	exe, _, err := parseTokens(tokens, line)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return 0, false
+	}
+
+	if err := exe.Exec(ctx); err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		code = exitCode(err)
+	}
+	recordExitCode(code)
+	return code, true
 }

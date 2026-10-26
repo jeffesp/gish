@@ -22,6 +22,7 @@ const (
 	TokenSemi                          // literal semicolon: ;
 	TokenAnd                           // literal double amp: &&
 	TokenOr                            // literal double pipe: ||
+	TokenRedirect                      // redirection operator; Value is the canonical form (>, >>, 2>, 2>>, &>, &>>, <)
 )
 
 // Token is a single lexical unit of a command line.
@@ -314,6 +315,12 @@ func tokenize(line string) ([]Token, error) {
 			inQuote = false
 		case !inQuote && (ch == ' ' || ch == '\t'):
 			emit()
+		case !inQuote && cur.Len() == 0 && curKind == TokenWord && redirectLen(line[i:]) > 0:
+			// Redirection operators are only recognized at the start of a
+			// word, so "echo>file" stays a single word.
+			op, n := redirectOp(line[i:])
+			tokens = append(tokens, Token{Kind: TokenRedirect, Value: op})
+			i += n - 1
 		case !inQuote && ch == ';':
 			emit()
 			tokens = append(tokens, Token{Kind: TokenSemi, Value: ";"})

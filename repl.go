@@ -161,11 +161,22 @@ func execItem(tokens []Token, line string, ctx *ExecCtx) (code int, ok bool) {
 		return 0, false
 	}
 
+	tokens, redirects, err := extractRedirects(tokens)
+	if err != nil {
+		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
+		return 0, false
+	}
+	if len(tokens) == 0 {
+		fmt.Fprintln(ctx.ErrOut, "syntax error: redirection without a command")
+		return 0, false
+	}
+
 	exe, _, err := parseTokens(tokens, line)
 	if err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)
 		return 0, false
 	}
+	attachRedirects(exe, redirects)
 
 	if err := exe.Exec(ctx); err != nil {
 		fmt.Fprintf(ctx.ErrOut, "%v\n", err)

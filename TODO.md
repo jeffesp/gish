@@ -7,11 +7,13 @@
 scripting.go:16 — InitScripting replaces the global jsVM on every call. Any builtin registered via gish.register() captures the JS callback from the old runtime, but builtinJS uses the new runtime. In production this is called once, but it's a footgun for testing and future changes.
 
 
-### gish.source requires absolute paths to the files
+### gish.source resolves relative paths against the current directory
 
-### Terminal title escape injection
+This works inside `init.js` (gish changes into the config directory while it runs) but not from a registered command or later call, where the cwd is wherever the user is. Resolving against the config dir instead would change the documented behavior, so it is left alone for now.
 
-builtins.go:108 / scripting.go:169 — The `title` builtin and `gish.title()` write user-supplied text directly into an OSC escape sequence without sanitizing control characters. A string containing `\007` or other escape sequences could inject arbitrary terminal control codes.
+### ~~Terminal title escape injection~~ — resolved
+
+`sanitizeTitle` (builtins.go) strips control characters from `title` and `gish.title` text.
 
 ### gish.register callbacks use ctx.Out from registration time, not invocation time
 
@@ -35,9 +37,9 @@ scripting_test.go — Tests call `InitScripting` which replaces the global `jsVM
 
 `expandTildes` (token.go) expands a leading `~`, `~/...`, or `~user` in unquoted words for every command, before variable and glob expansion (so `~/*.go` globs, and a `$VAR` whose value starts with `~` stays literal). Path completion also understands `~/` (see `fileCandidates`). Not supported: `~+`/`~-`, and `~` or `~user` inside assignments or after `:`.
 
-### Prompt function can fail
+### ~~Prompt function can fail~~ — resolved
 
-You don't get any output about what went wrong. There is an error swallowed by the execution of the JS, and it needs to be bubbled back to the `JSPrompt` function, I think.
+A failing prompt function is now reported once per distinct error even when `GISH_TRACES=0` (previously it was only reported when a trace file was written).
 
 ### No multi-line input / line continuation
 

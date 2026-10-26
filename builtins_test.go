@@ -209,3 +209,31 @@ func TestBuiltinClear(t *testing.T) {
 		t.Errorf("clear output missing escape sequence: %q", buf.String())
 	}
 }
+
+func TestSanitizeTitle(t *testing.T) {
+	cases := map[string]string{
+		"plain":            "plain",
+		"héllo wörld":      "héllo wörld",
+		"a\x07b":           "ab",
+		"a\x1b]0;evil\x07": "a]0;evil",
+		"a\u009bb":         "ab",
+		"tab\tnl\n":        "tabnl",
+		"del\x7f":          "del",
+	}
+	for in, want := range cases {
+		if got := sanitizeTitle(in); got != want {
+			t.Errorf("sanitizeTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuiltinTitleStripsControlChars(t *testing.T) {
+	var buf bytes.Buffer
+	cmd := &Command{Tokens: []Token{{Kind: TokenWord, Value: "title"}, {Kind: TokenWord, Value: "hi\x07\x1b[31m"}}}
+	if err := builtinTitle(cmd, testCtx(&buf)); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "\033]0;hi[31m\007"; got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}

@@ -174,7 +174,7 @@ func setupAPI(vm *goja.Runtime, ctx *ExecCtx) {
 
 	// gish.title(str)
 	gishObj.Set("title", func(call goja.FunctionCall) goja.Value {
-		title := call.Argument(0).String()
+		title := sanitizeTitle(call.Argument(0).String())
 		fmt.Fprintf(ctx.Out, "\033]0;%s\007", title)
 		return goja.Undefined()
 	})
@@ -432,9 +432,10 @@ func JSPrompt() string {
 		jsmu.Unlock()
 		if msg != lastPromptErr {
 			lastPromptErr = msg
-			if path := writeJSTrace("prompt", detail); path != "" {
-				fmt.Fprintf(scriptErrOut, "gish: prompt error: %s\n", withTracePath(msg, path))
-			}
+			// Report even when traces are disabled (no path): the user
+			// still needs to know why their prompt fell back.
+			path := writeJSTrace("prompt", detail)
+			fmt.Fprintf(scriptErrOut, "gish: prompt error: %s\n", withTracePath(msg, path))
 		}
 		return defaultPrompt
 	}

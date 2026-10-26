@@ -104,7 +104,7 @@ func builtinTitle(cmd *Command, ctx *ExecCtx) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: title TEXT...")
 	}
-	title := strings.Join(tokenValues(args), " ")
+	title := sanitizeTitle(strings.Join(tokenValues(args), " "))
 	fmt.Fprintf(ctx.Out, "\033]0;%s\007", title)
 	return nil
 }
@@ -122,4 +122,15 @@ func builtinExit(cmd *Command, _ctx *ExecCtx) error {
 	}
 	os.Exit(0)
 	return nil
+}
+
+// sanitizeTitle drops control characters (C0, DEL and C1) so title text can't
+// end the OSC sequence early or smuggle in other terminal escapes.
+func sanitizeTitle(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, s)
 }

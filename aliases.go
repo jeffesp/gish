@@ -28,7 +28,7 @@ func getAlias(name string) (string, bool) {
 }
 
 // expandAliases replaces the first TokenWord at each command position (start
-// of stream and after every TokenPipe) with the re-tokenized alias body.
+// of stream and after every pipe or list operator) with the re-tokenized alias body.
 // A name already expanded in this pass is not re-expanded, so an alias like
 // `ls='ls --color'` terminates instead of looping.
 func expandAliases(tokens []Token) ([]Token, error) {
@@ -41,7 +41,7 @@ func expandAliasesWith(tokens []Token, visited map[string]bool) ([]Token, error)
 		if len(out) == 0 {
 			return true
 		}
-		return out[len(out)-1].Kind == TokenPipe
+		return isSegmentBoundary(out[len(out)-1].Kind)
 	}
 	for _, t := range tokens {
 		if t.Kind != TokenWord || !atCmdStart() {

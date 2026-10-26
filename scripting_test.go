@@ -713,6 +713,24 @@ func TestDefaultInitJSLoads(t *testing.T) {
 	}
 }
 
+func TestJSPromptErrorReportedWithoutTraces(t *testing.T) {
+	t.Setenv("GISH_TRACES", "0")
+	initTestVM(t)
+	var errBuf bytes.Buffer
+	old := scriptErrOut
+	scriptErrOut = &errBuf
+	defer func() { scriptErrOut = old }()
+	lastPromptErr = ""
+
+	if _, err := jsVM.RunString(`gish.setPrompt(function() { throw new Error("kaput"); })`); err != nil {
+		t.Fatal(err)
+	}
+	JSPrompt()
+	if !strings.Contains(errBuf.String(), "kaput") {
+		t.Errorf("prompt error not reported with traces disabled: %q", errBuf.String())
+	}
+}
+
 func TestExecOptions(t *testing.T) {
 	initTestVM(t)
 	dir := t.TempDir()

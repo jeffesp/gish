@@ -110,7 +110,36 @@ gish> cd /tmp; ls
 - They chain left to right, like in bash: `false && echo x || echo y` prints `y`.
 - Each side can be a pipeline: `ls | grep go && echo found`.
 - `$?` is the exit code of the last command that ran. Quote the operator (`';'`, `'&&'`) or escape it (`\;`) to pass it as an argument.
-- Not supported: grouping with `( )` or `{ }`.
+- Aliases may contain these operators: `gish.alias("up", "git pull && git push")`.
+- Not supported: grouping with `( )` or `{ }`, and background jobs. A trailing `&` is rejected with an error rather than silently running in the foreground.
+
+## Redirection
+
+Send a command's streams to files, or read its input from one:
+
+```
+gish> echo hello > out.txt
+gish> echo more >> out.txt
+gish> make 2> errors.txt
+gish> make &> build.log
+gish> sort < names.txt
+```
+
+| Operator       | Named form    | Meaning                          |
+| -------------- | ------------- | -------------------------------- |
+| `>`            | `out>`        | stdout to file (overwrite)       |
+| `>>`           | `out>>`       | stdout to file (append)          |
+| `2>`           | `err>`        | stderr to file (overwrite)       |
+| `2>>`          | `err>>`       | stderr to file (append)          |
+| `&>`           | `out+err>`    | stdout and stderr to one file    |
+| `&>>`          | `out+err>>`   | both, appended                   |
+| `<`            | `in<`         | stdin from file                  |
+
+- Operators must start a word: `echo > f` redirects but `echo>f` is one word. The file name may follow immediately (`2>/dev/null`).
+- Each command in a pipeline has its own redirects. `cmd 2> /dev/null | next` discards `cmd`'s errors and pipes its output. `cmd > f | next` writes to `f` and `next` gets nothing.
+- If a stream is redirected more than once, the last one wins.
+- Quote or escape an operator to pass it as an argument: `echo '>'`.
+- Not supported yet: `2>&1` style descriptor duplication (use `&>` or `|&`), here-documents, and redirect options on `gish.exec`/`gish.spawn`.
 
 ## Redirection
 

@@ -145,3 +145,36 @@ func TestExecLineListSyntaxErrorRunsNothing(t *testing.T) {
 		t.Errorf("out=%q err=%q, want no output and a syntax error", out, errOut)
 	}
 }
+
+func TestExecLineBackgroundRefused(t *testing.T) {
+	historyFile = filepath.Join(t.TempDir(), "h")
+	out, errOut := runLine(t, "echo hi &")
+	if out != "" || !strings.Contains(errOut, "background jobs") {
+		t.Errorf("out=%q err=%q, want no output and a background-jobs error", out, errOut)
+	}
+}
+
+func TestAliasBodyWithListOperators(t *testing.T) {
+	historyFile = filepath.Join(t.TempDir(), "h")
+	setAlias("gishtwice", "echo one && echo two")
+	setAlias("gishq", "echo q")
+	defer unsetAlias("gishtwice")
+	defer unsetAlias("gishq")
+
+	if out, _ := runLine(t, "gishtwice"); out != "one\ntwo\n" {
+		t.Errorf("alias with &&: %q", out)
+	}
+	// Aliases expand at the start of every item, not only after a pipe.
+	if out, _ := runLine(t, "true && gishq; gishq"); out != "q\nq\n" {
+		t.Errorf("alias after && and ;: %q", out)
+	}
+	if out, _ := runLine(t, "echo a |& gishq"); out != "q\n" {
+		t.Errorf("alias after |&: %q", out)
+	}
+	t.Setenv("GISH_ALIAS_VAR", "val")
+	setAlias("gishv", "echo $GISH_ALIAS_VAR")
+	defer unsetAlias("gishv")
+	if out, _ := runLine(t, "gishv"); out != "val\n" {
+		t.Errorf("alias body vars should expand: %q", out)
+	}
+}

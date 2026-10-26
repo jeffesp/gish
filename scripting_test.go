@@ -728,6 +728,7 @@ func TestJSPromptErrorReportedWithoutTraces(t *testing.T) {
 	JSPrompt()
 	if !strings.Contains(errBuf.String(), "kaput") {
 		t.Errorf("prompt error not reported with traces disabled: %q", errBuf.String())
+	}
 }
 
 func TestExecOptions(t *testing.T) {

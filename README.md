@@ -41,6 +41,11 @@ The following builtins are available:
 - `clear` clears the screen. Ctrl-L will also do that.
 - `js` runs JavaScript inline - see the section on JavaScript below.
 
+## Moving by word
+
+- Alt-B / Alt-F move back / forward over a run of letters and digits, so `a/b` takes two steps (it stops at the slash).
+- Ctrl-Left / Ctrl-Right (and Alt-Left / Alt-Right) move over a whitespace-delimited word, so `a/b` is one step.
+
 ## History
 
 The history file is saved to `~/.gish_history` by default. That can be changed by setting `GISH_HISTORY_FILE` environment variable.
@@ -201,6 +206,20 @@ var r = gish.spawn("ls", ["-al"], function (line) {
 });
 // r.stderr, r.exitCode (stdout is consumed by the callback and given to the callback line-by-line)
 
+// Options: working directory, extra environment, stdin, timeout (ms)
+var r = gish.exec("git", ["ls-remote", "origin"], {
+  cwd: "/path/to/repo",
+  env: { GIT_TERMINAL_PROMPT: "0" },
+  stdin: "text for the process",
+  timeout: 2000,
+}); // r.timedOut is true if the timeout killed it
+
+// Read-only filesystem helpers
+gish.fs.readFile("notes.txt"); // text; throws if unreadable
+gish.fs.exists("notes.txt"); // boolean
+gish.fs.readdir("."); // ["a", "b"]
+gish.fs.stat("notes.txt"); // {isDir, isFile, size, mtime} or null
+
 // Environment variables
 gish.env.get("HOME");
 gish.env.set("KEY", "val");
@@ -225,6 +244,33 @@ gish.parseJSON(str); // parse with shell-friendly error messages
 gish.toJSON(obj); // pretty-print (2-space indent)
 gish.toJSON(obj, false); // compact
 ```
+
+### Modules - `require`
+
+`require("./path")` loads a CommonJS module (`module.exports`, `exports`, `__dirname`, `__filename`). Relative paths resolve against the requiring file, or the current directory at the prompt; `.js`, `/index.js` and `.json` are found without an extension. Each module runs in its own scope and is cached. Only file paths work, not npm packages (which mostly rely on Node's APIs that gish does not have).
+
+### Tab completion - `gish.complete`
+
+```javascript
+gish.complete("git", ({ command, args, current, line }) => {
+  if (args.length === 0) return ["status", "--format="];
+  return null; // fall back to file completion
+});
+```
+
+Return an array of strings. When the only match ends in `/`, `=`, `:`, `.` or `-` (for example `--format=` or `HEAD:`), no space is added so you can keep typing. Return `[]` for no candidates, or nothing to fall back to file completion. `gish.completeFiles(prefix, {dirsOnly})` returns the file candidates so a completer can mix them with its own. A completer also applies to aliases that expand to the command (`alias g git`).
+
+### Git completion
+
+[`js/completion/git.js`](js/completion/git.js) (with `git-lib.js` beside it) is a port of git's own `git-completion.bash` to `gish.complete`, so Tab knows git's commands, options, branches, tags, remotes, stash entries, config keys, and paths in the index or working tree. Copy the `completion` directory into your config directory and add this to `init.js`:
+
+```javascript
+require("./completion/git.js");
+```
+
+It asks git itself for most of what it offers (`--list-cmds`, `--git-completion-helper`, `for-each-ref`, `ls-files`), so it follows your git version. It honours `-C`, `--git-dir`, git aliases (`git co <tab>`) and gish aliases (`alias g git`). `GIT_COMPLETION_SHOW_ALL`, `GIT_COMPLETION_SHOW_ALL_COMMANDS` and `GIT_COMPLETION_CHECKOUT_NO_GUESS` work as they do in the bash script; `GIT_COMPLETION_IGNORE_CASE` does not. Differences from bash: directories get a trailing `/` and no space, and `--no-` is offered where bash prints `--no-...`.
+
+These two files are GPL-2.0 (the same licence as the script they are ported from), unlike the rest of gish, which is Apache-2.0. They are loaded at run time and are not part of the gish binary.
 
 ### `console`
 

@@ -357,7 +357,7 @@ func segmentTokens(line string, w word) []Token {
 
 	segStart := 0
 	for i, t := range tokens {
-		if t.Kind == TokenPipe || t.Kind == TokenMergePipe {
+		if isSegmentBoundary(t.Kind) {
 			segStart = i + 1
 		}
 	}

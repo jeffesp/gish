@@ -41,6 +41,11 @@ The following builtins are available:
 - `clear` clears the screen. Ctrl-L will also do that.
 - `js` runs JavaScript inline - see the section on JavaScript below.
 
+## Moving by word
+
+- Alt-B / Alt-F move back / forward over a run of letters and digits, so `a/b` takes two steps (it stops at the slash).
+- Ctrl-Left / Ctrl-Right (and Alt-Left / Alt-Right) move over a whitespace-delimited word, so `a/b` is one step.
+
 ## History
 
 The history file is saved to `~/.gish_history` by default. That can be changed by setting `GISH_HISTORY_FILE` environment variable.
@@ -88,6 +93,24 @@ The number is the entry's position in the full history file, so it works with `!
 | `--dir PATH`   | Only entries where Dir contains PATH as a substring   |
 
 `DATE` format: `YYYY-MM-DD` (parsed as local midnight). `--ok` and `--fail` are mutually exclusive.
+
+## Command Lists
+
+Join commands on one line with `;`, `&&` and `||`:
+
+```
+gish> mkdir foo && cd foo
+gish> make test || echo failed
+gish> cd /tmp; ls
+```
+
+- `a ; b` runs `b` after `a` whatever happened.
+- `a && b` runs `b` only if `a` exited 0.
+- `a || b` runs `b` only if `a` exited non-zero.
+- They chain left to right, like in bash: `false && echo x || echo y` prints `y`.
+- Each side can be a pipeline: `ls | grep go && echo found`.
+- `$?` is the exit code of the last command that ran. Quote the operator (`';'`, `'&&'`) or escape it (`\;`) to pass it as an argument.
+- Not supported: grouping with `( )` or `{ }`.
 
 ## Last Exit Code
 

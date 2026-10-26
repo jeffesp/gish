@@ -608,3 +608,59 @@ func TestScriptCandidatesContext(t *testing.T) {
 		t.Errorf("context = %s, want %s", v.String(), want)
 	}
 }
+
+func TestScriptedCompletionLeavesWordOpen(t *testing.T) {
+	withTempDir(t)
+	initTestVM(t)
+	if _, err := jsVM.RunString(`
+		gish.complete("gzzns", function (c) {
+			return ["--format=", "--force", "--fast", "HEAD:", "core.", "dir/", "--no-"];
+		});
+	`); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ line, want string }{
+		{"gzzns --form", "gzzns --format="},
+		{"gzzns --forc", "gzzns --force "},
+		{"gzzns --fa", "gzzns --fast "},
+		{"gzzns HE", "gzzns HEAD:"},
+		{"gzzns co", "gzzns core."},
+		{"gzzns di", "gzzns dir/"},
+		{"gzzns --n", "gzzns --no-"},
+	}
+	for _, c := range cases {
+		got, _, ok := completeLine(c.line, len(c.line), '\t')
+		if !ok || got != c.want {
+			t.Errorf("completeLine(%q) = (%q, %v), want %q", c.line, got, ok, c.want)
+		}
+	}
+}
+
+func TestScriptedCompletionFollowsAlias(t *testing.T) {
+	withTempDir(t)
+	initTestVM(t)
+	if _, err := jsVM.RunString(`
+		var seen;
+		gish.complete("gzzreal", function (c) { seen = c.command + ":" + c.args.join(","); return ["status"]; });
+		gish.alias("gzzal", "gzzreal -C dir");
+		gish.alias("gzzal2", "gzzal --x");
+		gish.alias("gzzloop", "gzzloop2");
+		gish.alias("gzzloop2", "gzzloop");
+		gish.alias("gzzpipe", "gzzreal | cat");
+	`); err != nil {
+		t.Fatal(err)
+	}
+	line := "gzzal2 sta"
+	got, _, ok := completeLine(line, len(line), '\t')
+	if !ok || got != "gzzal2 status " {
+		t.Errorf("got (%q, %v)", got, ok)
+	}
+	if seen := evalString(t, "seen"); seen != "gzzreal:-C,dir,--x" {
+		t.Errorf("seen = %q", seen)
+	}
+	for _, l := range []string{"gzzloop x", "gzzpipe sta"} {
+		if _, _, ok := completeLine(l, len(l), '\t'); ok {
+			t.Errorf("completeLine(%q) should not complete", l)
+		}
+	}
+}
